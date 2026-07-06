@@ -89,7 +89,7 @@ com.akamai.wsa
 │   └── (command/query models, application services)
 │
 ├── infrastructure/            ← outbound adapters (implement domain ports)
-│   ├── persistence/<engine>/  ← EventRepository impl, storage entities, mappers, migrations
+│   ├── persistence/<engine>/  ← EventStore + OffenderWindow impls, storage entities, mappers, migrations
 │   └── config/                ← Spring @Configuration, properties
 │
 └── interfaces/                ← inbound adapters
@@ -114,12 +114,14 @@ We stay close to DDD. Concretely:
 - **Enums for closed vocabularies:** `AttackCategory` (INJECTION, XSS,
   PROTOCOL_VIOLATION, DATA_LEAKAGE, BOT, DOS, RATE_LIMIT), `Action`
   (DENY, ALERT, MONITOR), `Severity` (CRITICAL, HIGH, MEDIUM, LOW).
-- **Domain services (stateless):** `AttackTypeClassifier`,
-  `ThreatScoreCalculator` (pure — offender flag injected), `RepeatOffenderPolicy`.
-  Business rules live here, not in controllers or entities-as-anemic-bags.
-- **Ports (domain-owned interfaces):** `EventRepository` with intention-revealing
-  methods (`save`, `countByClientIpWithin`, `summarize`, `findSamples`) — named
-  in the ubiquitous language, not in storage terms.
+- **Domain services (stateless interfaces):** `AttackTypeClassifier`
+  (`classify`), `ThreatScoreCalculator` (`calculate`, pure — offender flag
+  injected via `ThreatScoringInputs`). Business rules live here, not in
+  controllers or entities-as-anemic-bags.
+- **Ports (domain-owned interfaces), two of them:** `EventStore` (`saveAll`,
+  `countAll`, `findByConfigId`, and later `summarize`, `findSamples`) and
+  `OffenderWindow` (`countRecentEventsFromClient`) — named in the ubiquitous
+  language, not in storage terms.
 - **Application services** orchestrate a single use case each; they are thin and
   hold no business rules.
 - **No anemic domain model:** behavior lives with the data it concerns.
@@ -185,12 +187,12 @@ We stay close to DDD. Concretely:
 
 - **Unit (graded, must be thorough):** full `ThreatScoreCalculator` matrix
   (every severity, action, path bump, offender bump, cap-at-100, combinations);
-  `AttackTypeClassifier` every category; `RepeatOffenderPolicy` boundaries
+  `AttackTypeClassifier` every category; `OffenderWindow` boundaries
   (exactly 5 vs 6, window edges). Table-driven where possible.
 - **Integration (≥1, graded):** ingest → store → query round-trip against **real
   storage via Testcontainers**; validation-error (400) shapes; pagination + total
   correctness; stats aggregation correctness on generator-seeded data.
-- **Fakes:** in-memory `EventRepository` implementation for fast service tests.
+- **Fakes:** in-memory `EventStore` / `OffenderWindow` implementations for fast service tests.
 - Tests are first-class — write them alongside the feature (per part), not after.
 
 ---

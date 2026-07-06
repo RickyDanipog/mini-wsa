@@ -74,31 +74,35 @@ Layered Spring Boot application:
 │   StatsService · SamplesService · [bonus] TimeseriesService/AlertService   │
 ├──────────────────────────────────────────────────────────────────────────┤
 │  PERSISTENCE / PORT LAYER   (interfaces — the storage-agnostic seam)        │
-│   EventRepository:  save(events) · countByIpWithin(ip, window)              │
-│                     summarize(filter) · findSamples(filter,page)            │
-│                     [bonus] bucketCounts(filter, interval)                  │
+│   EventStore:      saveAll(events) · countAll() · findByConfigId(id)         │
+│                    summarize(query) [Part 3] · findSamples(query) [Part 4]   │
+│                    [bonus] bucketCounts(query, interval)                     │
+│   OffenderWindow:  countRecentEventsFromClient(clientIp, window, asOf)        │
 ├──────────────────────────────────────────────────────────────────────────┤
 │  ADAPTER LAYER   (one implementation per chosen engine — §7)                │
-│   <Engine>EventRepository  +  schema/migrations  +  connection config       │
+│   <Engine>EventStore · <Engine>OffenderWindow  + schema/config              │
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
-**Key seam:** `EventRepository` is the port. Everything above it is pure Java
-domain logic; everything below it is engine-specific. Choosing/changing the
-storage engine = writing one adapter.
+**Key seam:** `EventStore` and `OffenderWindow` are the two outbound ports.
+Everything above them is pure Java domain logic; everything below is
+engine-specific. Choosing/changing the storage engine = writing one adapter per
+port (they can even use different engines — e.g. Mongo `EventStore` + Redis
+`OffenderWindow`).
 
 ### Component responsibilities
 
 | Component | Does | Depends on |
 |-----------|------|------------|
 | `IngestController` | Parse single/array body, invoke ingestion, map results to 201/400 | IngestionService |
-| `IngestionService` | Orchestrate validate → enrich → persist for each event; assign `receivedAt`; define batch semantics | EnrichmentPipeline, EventRepository |
-| `AttackTypeClassifier` | `rule.category` → `attackType` (fixed map) | — (pure) |
-| `ThreatScoreCalculator` | Compute 0–100 score from severity/action/path + injected offender flag | — (pure) |
-| `RepeatOffenderChecker` | Answer "> 5 events from this IP in last 10 min?" | EventRepository (or cache, §6.2) |
-| `StatsService` | Build summary aggregates over filter | EventRepository |
-| `SamplesService` | Filtered, sorted, paginated retrieval + total count | EventRepository |
-| `EventRepository` (port) | Storage-agnostic persistence + query contract | storage adapter |
+| `IngestionService` (impl of `IngestSecurityEvents`) | Orchestrate validate → enrich → persist for each event; assign `receivedAt`; define batch semantics | EnrichmentPipeline, EventStore |
+| `AttackTypeClassifier` (interface) | `rule.category` → `attackType` (fixed map) | — (pure) |
+| `ThreatScoreCalculator` (interface) | Compute 0–100 score from severity/action/path + injected offender flag | — (pure) |
+| `RepeatOffenderChecker` | Answer "> 5 events from this IP in last 10 min?" via the port | OffenderWindow (§6.2) |
+| `StatsService` (impl of `SummarizeStatistics`) | Build summary aggregates over filter | EventStore |
+| `SamplesService` (impl of `FetchEventSamples`) | Filtered, sorted, paginated retrieval + total count | EventStore |
+| `EventStore` (port) | Storage-agnostic persistence + aggregation + sample queries | storage adapter |
+| `OffenderWindow` (port) | Repeat-offender count within a look-back window | store/cache adapter |
 | `DataGenerator` | Emit realistic events + attack waves | ingest API / file |
 
 ---
@@ -135,10 +139,10 @@ Request (1 event or array)
       ├─ invalid → collect error detail
   → stamp receivedAt
   → EnrichmentPipeline per event:
-        classify attackType
-        offenderFlag = RepeatOffenderChecker.isRepeat(clientIp, now)   ← stateful read
-        threatScore  = ThreatScoreCalculator.score(severity, action, path, offenderFlag)
-  → EventRepository.save(enrichedEvents)   (batched insert)
+        attackType   = AttackTypeClassifier.classify(category)
+        offenderFlag = OffenderWindow.countRecentEventsFromClient(clientIp, window, receivedAt) > 5
+        threatScore  = ThreatScoreCalculator.calculate(ThreatScoringInputs)
+  → EventStore.saveAll(enrichedEvents)   (batched insert)
   → respond 201 (accepted) / 400 (validation details)   [batch semantics: §8]
 ```
 
@@ -146,7 +150,7 @@ Request (1 event or array)
 ```
 GET /v1/stats/summary?configId&from&to
   → validate params
-  → StatsService → EventRepository.summarize(filter)
+  → StatsService → EventStore.summarize(statisticsQuery)
         (engine computes: total, byCategory{count,avg}, byAction{count},
          top10 IPs, top10 paths — all as pushed-down aggregations)
   → assemble response DTO → 200
@@ -156,7 +160,7 @@ GET /v1/stats/summary?configId&from&to
 ```
 GET /v1/events/samples?filters&limit&offset
   → clamp limit (default 20, max 100)
-  → SamplesService → EventRepository.findSamples(filter, page)
+  → SamplesService → EventStore.findSamples(sampleQuery)
         (WHERE filters, ORDER BY timestamp DESC, LIMIT/OFFSET, + COUNT(*))
   → { total, limit, offset, results[] } → 200
 ```
@@ -166,7 +170,9 @@ GET /v1/events/samples?filters&limit&offset
 ## 6. Key Design Decisions
 
 ### 6.1 Threat scoring engine (deterministic core)
-`ThreatScoreCalculator.score(severity, action, path, isRepeatOffender)` is a
+`ThreatScoreCalculator.calculate(ThreatScoringInputs)` — where
+`ThreatScoringInputs` carries `severity`, `action`, `requestPath`, and the
+resolved `repeatOffender` flag — is a
 **pure function** — no I/O — so the entire scoring matrix (severity tiers,
 action bonuses, `/admin`|`/login` bump, repeat bonus, cap at 100) is exhaustively
 unit-testable. The only non-pure input, the offender flag, is computed
@@ -179,13 +185,13 @@ write path** — the design-sensitive decision. Three strategies:
 
 | Strategy | How | Pros | Cons |
 |----------|-----|------|------|
-| **A. Storage query** (baseline) | `countByIpWithin(ip, 10m)` against the store, backed by `(clientIp, timestamp)` index | Correct, consistent, simplest, survives restarts, works across instances | A read per event on the hot path; at high volume needs batching/grouping |
+| **A. Storage query** (baseline) | `OffenderWindow.countRecentEventsFromClient(clientIp, window, asOf)` against the store, backed by `(clientIp, timestamp)` index | Correct, consistent, simplest, survives restarts, works across instances | A read per event on the hot path; at high volume needs batching/grouping |
 | **B. In-process sliding window** | Per-IP time-bucketed counter / Caffeine cache | Very fast, no round-trip | Process-local (wrong under horizontal scale), lost on restart, memory unbounded without eviction |
 | **C. Shared cache (Redis)** | Sorted set per IP: `ZADD ts`, `ZCOUNT [now-10m, now]`, TTL | Fast + shared across instances + scales out | Extra dependency & failure mode |
 
 **Decision:** this lives behind its own **`OffenderWindow` port**
-(`countRecent(ip, window)`), separate from `EventStore`, so its backing can
-change independently. Build target: **A via MongoDB** — an indexed
+(`countRecentEventsFromClient(clientIp, window, asOf)`), separate from
+`EventStore`, so its backing can change independently. Build target: **A via MongoDB** — an indexed
 `countDocuments({clientIp, receivedAt >= now-10m})` on `{clientIp:1, receivedAt:1}`
 (correct, simple, in-comfort-zone). **Scale step: C via Redis** (sorted-set
 sliding window + TTL) — swapped in behind the same port with zero change to the
@@ -200,10 +206,13 @@ implications" answer.
 API), never by materializing rows in the JVM. Keeps memory flat and latency
 bounded as data grows (NFR4).
 
-### 6.4 Storage-agnostic repository port
-A single `EventRepository` interface is the contract; each candidate engine gets
-one adapter. Benefits: the stack decision (§7) is reversible, tests can run
-against an in-memory fake for unit tests and the real engine (Testcontainers)
+### 6.4 Storage-agnostic ports (two of them)
+Persistence is split into two domain-owned interfaces — **`EventStore`** (durable
+save + aggregation + sample queries) and **`OffenderWindow`** (repeat-offender
+count within a look-back window). Each candidate engine gets one adapter per
+port, and the two ports may even use different engines (Mongo `EventStore` +
+Redis `OffenderWindow`). Benefits: the stack decision (§7) is reversible, tests
+run against in-memory fakes for unit tests and the real engine (Testcontainers)
 for integration tests, and the domain never leaks storage concerns.
 
 ---
@@ -291,7 +300,7 @@ rollup-friendly.
   **real engine via Testcontainers**; validation-error paths (400 shapes);
   pagination + total-count correctness; stats aggregation correctness on a seeded
   dataset from the generator.
-- **Fakes:** in-memory `EventRepository` for fast service-layer unit tests.
+- **Fakes:** in-memory `EventStore` / `OffenderWindow` for fast service-layer unit tests.
 
 ---
 
@@ -312,7 +321,7 @@ rollup-friendly.
 
 | Bonus | Bolts onto | Added surface |
 |-------|-----------|---------------|
-| **B3 Time-series** | StatsService / EventRepository | `bucketCounts(filter, interval)` + `TimeseriesController` |
+| **B3 Time-series** | StatsService / EventStore | `bucketCounts(query, interval)` + `TimeseriesController` |
 | **B4 Rate limiting** | Web layer | `RateLimitFilter` (token bucket per IP) → 429 |
 | **B1 Alerting** | new AlertService + store | `alert_rules` persistence, `define`/`evaluate` endpoints |
 | **B2 Streaming** | IngestionService | Kafka consumer → *same* EnrichmentPipeline; compose + producer |
