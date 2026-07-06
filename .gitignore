@@ -26,5 +26,8 @@ out/
 # --- Local tooling config ---
 .claude/
 
+# --- Personal, local-only notes (never pushed) ---
+*.local.md
+
 # --- Source assignment PDF: kept locally, never published (repo will go public) ---
 Assignment(1).pdf
