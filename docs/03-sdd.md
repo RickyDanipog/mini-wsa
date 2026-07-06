@@ -183,10 +183,16 @@ write path** — the design-sensitive decision. Three strategies:
 | **B. In-process sliding window** | Per-IP time-bucketed counter / Caffeine cache | Very fast, no round-trip | Process-local (wrong under horizontal scale), lost on restart, memory unbounded without eviction |
 | **C. Shared cache (Redis)** | Sorted set per IP: `ZADD ts`, `ZCOUNT [now-10m, now]`, TTL | Fast + shared across instances + scales out | Extra dependency & failure mode |
 
-**Recommendation:** ship **A** (correct + simple, defensible) with the
-`(clientIp, timestamp)` index; document **B/C** as the explicit scale path.
-For batch ingest, group by IP to collapse N lookups into one. This directly
-answers the interview's "performance implications" question.
+**Decision:** this lives behind its own **`OffenderWindow` port**
+(`countRecent(ip, window)`), separate from `EventStore`, so its backing can
+change independently. Build target: **A via MongoDB** — an indexed
+`countDocuments({clientIp, receivedAt >= now-10m})` on `{clientIp:1, receivedAt:1}`
+(correct, simple, in-comfort-zone). **Scale step: C via Redis** (sorted-set
+sliding window + TTL) — swapped in behind the same port with zero change to the
+scorer or event store; also the interview "one thing I learned" item. **B** is
+named only as the tempting-but-wrong-under-horizontal-scale middle. For batch
+ingest, group by IP to collapse N lookups into one — the "performance
+implications" answer.
 
 ### 6.3 Aggregations pushed to the engine
 `byCategory`, `byAction`, top-N, and averages are computed by the storage engine
@@ -204,15 +210,25 @@ for integration tests, and the domain never leaks storage concerns.
 
 ## 7. Storage Engine — Decision
 
-> **DECIDED (2026-07-06):** Start with an **in-memory (cached) adapter** behind
-> the `EventRepository` port to get a runnable environment for sanity checks and
-> dry runs while all business logic is built. The concrete production DB is
-> **deliberately deferred to a comparative load-test phase**: once the logic is
-> in place, real stores (PostgreSQL, MongoDB, and any other candidate worth
-> researching) are plugged in behind the *same* port and load-tested to justify
-> the final choice. Switching the DB never touches domain/application code —
-> that is the entire point of the port seam. The table below is the input to
-> that later comparison, not a commitment.
+> **DECIDED (2026-07-07):** Persistence is split into **two ports** — `EventStore`
+> (save events, stats aggregation, sample retrieval) and `OffenderWindow`
+> (`countRecent(ip, window)` for the repeat-offender rule). Progression:
+>
+> 1. **Now (done):** in-memory adapters behind both ports — runnable dry-run env.
+> 2. **Build target:** **MongoDB** behind both ports (chosen for developer
+>    fluency + document fit + capable aggregation pipeline).
+> 3. **Scale step / learning item:** **Redis** behind `OffenderWindow` only
+>    (sorted-set sliding window + TTL), and optionally hot-stat caching. Redis is
+>    a *complement*, not the source of truth; treat its state as rebuildable.
+> 4. **Comparative load test:** implement a **PostgreSQL** `EventStore` adapter
+>    and benchmark it against Mongo — the final justification is data, not
+>    opinion.
+>
+> Switching any of these is only ever a new outer-ring adapter; domain and
+> application code never change. **ClickHouse is intentionally words-only** — a
+> columnar-OLAP talking point for the "analytics at 100×" question, not code
+> (unfamiliar tech is kept off the critical path). The table below is the input
+> to the load test, not a commitment.
 
 Event data is **append-only, timestamped, high-volume**, queried by **time range
 + dimensional aggregation**. That profile is the deciding factor.
@@ -224,15 +240,14 @@ Event data is **append-only, timestamped, high-volume**, queried by **time range
 | **Elasticsearch/OpenSearch** | Strong for the samples/filter API + aggregations; closest to real Akamai WSA | Sharding built-in | Medium; heavier footprint | "Log-analytics native; great search + aggregation." Must explain eventual consistency. |
 | **In-memory (H2/maps)** | OK for demo only | **Weak** — the explicit "big data scale" requirement is unmet | Lowest | Only defensible as a stated MVP tradeoff. |
 
-**My recommendation:** **PostgreSQL** for the submission body (fastest path to a
-correct, well-tested, reproducible system that nails all required parts), with a
-written, specific ClickHouse migration path as the "what I'd improve / how I'd
-scale" story. If you want maximum "big data" signal and are comfortable with the
-learning curve, **ClickHouse** is the more impressive primary choice given the
-append-only + aggregation profile.
-
-> **This is your call — nothing downstream is blocked on it because of the
-> `EventRepository` seam.** Pick here and the SDD/effort numbers finalize.
+**Chosen build stack:** **MongoDB** (`EventStore`) + **Redis** (`OffenderWindow`
+scale step / hot-stat cache), built on developer fluency so every line is
+defensible in the interview. **PostgreSQL** is implemented as a second
+`EventStore` adapter purely for a **comparative load test** — the relational
+baseline that justifies (or challenges) the Mongo choice with numbers.
+**ClickHouse** stays a words-only scaling narrative (columnar OLAP reads only the
+columns it aggregates → ideal for time-range GROUP-BY at 100×), not a
+dependency. Elasticsearch: noted, not pursued.
 
 ---
 
