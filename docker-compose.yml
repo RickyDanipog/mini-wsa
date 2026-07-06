@@ -1,0 +1,8 @@
+services:
+  mini-wsa:
+    build:
+      context: .
+      dockerfile: services/mini-wsa/Dockerfile
+    ports:
+      - "8080:8080"
+    # Storage services (Postgres/Mongo/...) get added here in the DB phase.
