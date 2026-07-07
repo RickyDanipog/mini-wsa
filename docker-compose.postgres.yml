@@ -1,0 +1,16 @@
+services:
+  event-store:
+    environment:
+      WSA_STORAGE: postgres
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/wsa
+      SPRING_DATASOURCE_USERNAME: wsa
+      SPRING_DATASOURCE_PASSWORD: wsa
+    depends_on: [kafka, postgres]
+
+  analytics:
+    environment:
+      WSA_STORAGE: postgres
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/wsa
+      SPRING_DATASOURCE_USERNAME: wsa
+      SPRING_DATASOURCE_PASSWORD: wsa
+    depends_on: [postgres]
