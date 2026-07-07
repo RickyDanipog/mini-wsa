@@ -1,0 +1,78 @@
+package com.akamai.wsa.eventstore.interfaces.messaging;
+
+import com.akamai.wsa.contracts.Action;
+import com.akamai.wsa.contracts.AttackCategory;
+import com.akamai.wsa.contracts.EnrichedEventMessage;
+import com.akamai.wsa.contracts.GeoLocationMessage;
+import com.akamai.wsa.contracts.MessageEnvelope;
+import com.akamai.wsa.contracts.RawEventMessage;
+import com.akamai.wsa.contracts.RuleMessage;
+import com.akamai.wsa.contracts.Severity;
+import com.akamai.wsa.eventstore.infrastructure.persistence.inmemory.InMemoryEnrichedEventStore;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.apache.kafka.clients.producer.Producer;
+import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.common.serialization.StringSerializer;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.kafka.core.DefaultKafkaProducerFactory;
+import org.springframework.kafka.test.EmbeddedKafkaBroker;
+import org.springframework.kafka.test.context.EmbeddedKafka;
+import org.springframework.kafka.test.utils.KafkaTestUtils;
+
+import java.time.Duration;
+import java.time.Instant;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
+
+@SpringBootTest(properties = "spring.kafka.bootstrap-servers=${spring.embedded.kafka.brokers}")
+@EmbeddedKafka(partitions = 1, topics = {"events.enriched"})
+class EnrichedEventListenerIntegrationTest {
+
+    @Autowired
+    ObjectMapper objectMapper;
+
+    @Autowired
+    EmbeddedKafkaBroker embeddedKafka;
+
+    @Autowired
+    InMemoryEnrichedEventStore eventStore;
+
+    @Test
+    void persistsEnrichedEventIdempotentlyByEventId() throws Exception {
+        MessageEnvelope<EnrichedEventMessage> envelope = enrichedEnvelope("evt-00132");
+
+        try (Producer<String, String> producer = createProducer()) {
+            String json = objectMapper.writeValueAsString(envelope);
+            producer.send(new ProducerRecord<>("events.enriched", "14227", json));
+            producer.send(new ProducerRecord<>("events.enriched", "14227", json)); // duplicate delivery
+            producer.flush();
+        }
+
+        await().atMost(Duration.ofSeconds(15))
+                .until(() -> eventStore.containsEventId("evt-00132"));
+
+        // idempotent: the duplicate must not double-count
+        assertThat(eventStore.count()).isEqualTo(1);
+    }
+
+    private MessageEnvelope<EnrichedEventMessage> enrichedEnvelope(String eventId) {
+        RawEventMessage rawEvent = new RawEventMessage(
+                eventId, Instant.parse("2026-05-20T14:32:10Z"), 14227, "pol_web1",
+                "203.0.113.42", "www.example.com", "/api/v1/login", "POST", 403, "Mozilla/5.0",
+                new RuleMessage("950001", "SQL_INJECTION", "SQL Injection Attack Detected",
+                        Severity.CRITICAL, AttackCategory.INJECTION),
+                Action.DENY, new GeoLocationMessage("CN", "Beijing"), 1024, 256);
+        EnrichedEventMessage enriched = new EnrichedEventMessage(
+                rawEvent, "SQL/Command Injection", 75, Instant.parse("2026-05-20T14:32:10.512Z"));
+        return MessageEnvelope.of("corr-3", Instant.parse("2026-05-20T14:32:12Z"), enriched);
+    }
+
+    private Producer<String, String> createProducer() {
+        return new DefaultKafkaProducerFactory<>(
+                KafkaTestUtils.producerProps(embeddedKafka), new StringSerializer(), new StringSerializer())
+                .createProducer();
+    }
+}

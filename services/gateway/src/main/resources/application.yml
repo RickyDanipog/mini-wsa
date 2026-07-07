@@ -3,6 +3,14 @@ server:
 spring:
   application:
     name: gateway
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+wsa:
+  topics:
+    events-raw: events.raw
 management:
   endpoints:
     web:
