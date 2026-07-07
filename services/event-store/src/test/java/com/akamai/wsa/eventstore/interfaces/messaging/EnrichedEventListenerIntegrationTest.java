@@ -8,7 +8,8 @@ import com.akamai.wsa.contracts.MessageEnvelope;
 import com.akamai.wsa.contracts.RawEventMessage;
 import com.akamai.wsa.contracts.RuleMessage;
 import com.akamai.wsa.contracts.Severity;
-import com.akamai.wsa.eventstore.infrastructure.persistence.inmemory.InMemoryEnrichedEventStore;
+import com.akamai.wsa.eventstore.domain.model.StoredEvent;
+import com.akamai.wsa.eventstore.domain.port.EventStore;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerRecord;
@@ -38,7 +39,7 @@ class EnrichedEventListenerIntegrationTest {
     EmbeddedKafkaBroker embeddedKafka;
 
     @Autowired
-    InMemoryEnrichedEventStore eventStore;
+    EventStore eventStore;
 
     @Test
     void persistsEnrichedEventIdempotentlyByEventId() throws Exception {
@@ -52,10 +53,12 @@ class EnrichedEventListenerIntegrationTest {
         }
 
         await().atMost(Duration.ofSeconds(15))
-                .until(() -> eventStore.containsEventId("evt-00132"));
+                .until(() -> eventStore.findByConfigId(14227).stream()
+                        .anyMatch(stored -> stored.eventId().equals("evt-00132")));
 
         // idempotent: the duplicate must not double-count
-        assertThat(eventStore.count()).isEqualTo(1);
+        assertThat(eventStore.countAll()).isEqualTo(1);
+        assertThat(eventStore.findByConfigId(14227)).extracting(StoredEvent::eventId).containsExactly("evt-00132");
     }
 
     private MessageEnvelope<EnrichedEventMessage> enrichedEnvelope(String eventId) {
