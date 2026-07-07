@@ -5,6 +5,10 @@ spring:
     name: analytics
 wsa:
   storage: inmemory
+  rate-limit:
+    enabled: true
+    max-requests: 100
+    window-seconds: 60
 management:
   endpoints:
     web:
