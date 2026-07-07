@@ -1,0 +1,16 @@
+spring:
+  application:
+    name: event-generator
+  main:
+    web-application-type: none
+wsa:
+  generator:
+    target-url: ${GATEWAY_URL:http://localhost:8081}
+    total-events: 10000
+    wave-count: 20
+    wave-size: 50
+    batch-size: 200
+    seed: 42
+    base-timestamp: "2026-05-20T14:00:00Z"
+    output-mode: STDOUT
+    output-file: "generated-events.json"

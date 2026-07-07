@@ -29,5 +29,6 @@
         <module>services/enrichment</module>
         <module>services/event-store</module>
         <module>services/analytics</module>
+        <module>services/event-generator</module>
     </modules>
 </project>
