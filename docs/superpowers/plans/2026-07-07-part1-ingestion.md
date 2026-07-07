@@ -1,5 +1,9 @@
 # Part 1 — Ingestion API Implementation Plan
 
+> ⚠️ **SUPERSEDED by the v2 architecture.** Ingestion now lives in the **gateway**
+> service — see `2026-07-07-service-gateway.md` (publishes to Kafka instead of
+> storing). This doc is kept only as a logic reference for validation/mapping.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** `POST /v1/events/ingest` accepts a single event or an array, validates every event, stamps a server-side `receivedAt`, stores the events, and returns `201` with an accepted count (or `400` with per-item details).

@@ -1,5 +1,10 @@
 # Part 4 — Samples API Implementation Plan
 
+> ⚠️ **SUPERSEDED by the v2 architecture.** Sample retrieval now lives in the
+> **analytics** service (read side) — see `2026-07-07-service-analytics.md`;
+> persistence is in the **event-store** service (`2026-07-07-service-event-store.md`).
+> Kept only as a filtering/paging-logic reference.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Serve `GET /v1/events/samples` — a filtered, paginated, newest-first page of enriched events, plus the total count of matches.

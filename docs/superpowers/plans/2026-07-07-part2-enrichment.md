@@ -1,5 +1,12 @@
 # Part 2 — Classification & Enrichment Implementation Plan
 
+> ⚠️ **SUPERSEDED by the v2 architecture.** Enrichment now lives in the
+> **enrichment** service — see `2026-07-07-service-enrichment.md` (Kafka consume/
+> publish + Redis window). **Note:** the authoritative repeat-offender semantics
+> are the service plan's *record-then-read* (current event counts; flag `count >
+> 5`; the **6th** event in the window is first flagged). The prior-only wording
+> below is stale — follow the service plan.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Replace Part 1's placeholder enrichment with the real thing — classify each event's `attackType` and compute its 0–100 `threatScore` (including the stateful repeat-offender bonus) — so every ingested `SecurityEvent` is fully and correctly enriched.

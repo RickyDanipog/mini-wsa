@@ -164,13 +164,20 @@ The repeat-offender flag is injected via `ThreatScoringInputs`, keeping the
 scorer I/O-free and exhaustively unit-testable (graded logic).
 
 ### 6.2 Repeat-offender window (Redis, owned by enrichment)
-The `OffenderWindow` port answers `countRecentEventsFromClient(clientIp, window,
-asOf)`. Implementation = **Redis sorted set per IP** (`ZADD receivedAt`,
-`ZCOUNT [asOf-10m, asOf]`, TTL); enrichment records each event as it processes
-it. Locked semantics: window basis = **`receivedAt`**; count **prior** events
-only; **`> 5`** (6th+) triggers +15; window = **10 min**. In-memory adapter for
-tests; Redis for real. This keeps the stateful bit self-contained in enrichment
-(no synchronous call back to event-store).
+Because enrichment no longer stores events itself (event-store does), the
+`OffenderWindow` port owns its own window state with two methods:
+`recordEvent(clientIp, receivedAt)` and `countRecentEventsFromClient(clientIp,
+window, asOf)`. Implementation = **Redis sorted set per IP** (`ZADD receivedAt`,
+`ZREMRANGEBYSCORE` old, `ZCOUNT [asOf-10m, asOf]`, TTL). In-memory adapter for
+tests; Redis for real. Self-contained in enrichment — no synchronous call back
+to event-store.
+
+**Locked semantics (record-then-read):** for each event, `recordEvent` first,
+then count the window **including the current event**; flag `repeatOffender =
+count > 5`. So the **6th** event from an IP within the 10-minute window is the
+first one to earn +15. Window basis = **`receivedAt`** (trusted clock); window =
+**10 min**. (This is the reading of "more than 5 events exist within the last 10
+minutes" where the event being scored is one of those that exist.)
 
 ---
 
