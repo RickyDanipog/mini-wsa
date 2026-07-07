@@ -37,31 +37,34 @@ stores them, and serves analytics APIs. Backend only, Java + Spring Boot.
 
 ## 2. Repository Layout (mono-repo of services)
 
+> **v2 (distributed).** The `mini-wsa` monolith is being decomposed into 5
+> services + a shared `contracts` module (see `03-sdd.md` v2 and the
+> `2026-07-07-v2-restructure.md` plan). The monolith code is being relocated,
+> not rewritten.
+
 ```
 WSA/
 ├── AGENTS.md                  ← you are here
 ├── README.md                  ← assignment-facing (build/run, API, architecture)
-├── docs/                      ← requirements, effort, SDD
-├── docker-compose.yml         ← full stack: services + storage (+ kafka/redis if a bonus needs it)
-├── pom.xml                    ← root Maven aggregator / parent (shared deps & versions)
+├── docs/                      ← requirements, effort, SDD (v2)
+├── docker-compose.yml         ← full stack: kafka + mongo + redis + the 4 services
+├── pom.xml                    ← root Maven aggregator / parent
 └── services/
-    ├── mini-wsa/              ← PRIMARY bounded context: ingest + enrich + store + query
-    │   ├── pom.xml
-    │   ├── Dockerfile
-    │   └── src/{main,test}/java/com/akamai/wsa/...
-    └── event-generator/       ← Part 5: realistic events + attack waves; feeds the ingest API
-        ├── pom.xml
-        ├── Dockerfile
-        └── src/main/java/com/akamai/wsa/generator/...
+    ├── contracts/             ← shared Kafka message schemas + envelope (no runtime)
+    ├── gateway/               ← :8081 REST ingest → validate/transform → publish events.raw
+    ├── enrichment/            ← :8082 consume events.raw → classify+score (Redis window) → publish events.enriched
+    ├── event-store/           ← :8083 consume events.enriched → persist (Mongo, system of record)
+    ├── analytics/             ← :8084 read Mongo replica → serve /v1/stats/*, /v1/events/samples
+    └── event-generator/       ← CLI tool: realistic events + attack waves; feeds gateway
 ```
 
 - **One deployable = one service module** under `services/`, each with its own
   `Dockerfile`, wired together by the root `docker-compose.yml`.
-- We start with **one recognized component** (`mini-wsa`); expect additional
-  services/instances (e.g. generator, load harness, extra consumers) as testing
-  and bonuses demand — the layout must absorb them without restructuring.
-- Cross-service shared code, if it appears, goes in a `shared-kernel` module —
-  but **only when genuinely shared** (YAGNI first).
+- Services communicate only via **Kafka topics** (write path) and the shared
+  **`contracts`** module (schemas) — never by importing each other's internals.
+  Read path: `analytics` reads a Mongo replica of `event-store`'s data.
+- Transitional: the `mini-wsa` module still exists until its code is relocated
+  (restructure plan Task 5), then it is deleted.
 
 ---
 
@@ -73,11 +76,14 @@ Follows `03-sdd.md`: a **storage-agnostic domain core** behind a repository
 its ports). **The `domain` package never imports Spring, Jackson, JPA, or any
 storage type.**
 
-### Package structure (inside `mini-wsa`, base `com.akamai.wsa`)
+Each service repeats this shape internally (base `com.akamai.wsa.<service>`);
+inbound adapters are REST controllers **and/or** Kafka listeners.
+
+### Package structure (per service, base `com.akamai.wsa.<service>`)
 
 ```
-com.akamai.wsa
-├── MiniWsaApplication.java
+com.akamai.wsa.<service>
+├── <Service>Application.java
 │
 ├── domain/                    ← pure business model & rules. Zero framework deps.
 │   ├── model/                 ← aggregates, entities, value objects, enums
@@ -93,10 +99,11 @@ com.akamai.wsa
 │   └── config/                ← Spring @Configuration, properties
 │
 └── interfaces/                ← inbound adapters
-    └── rest/                  ← controllers, request/response DTOs, @ControllerAdvice
+    ├── rest/                  ← controllers, DTOs, @ControllerAdvice (gateway, analytics)
+    └── messaging/             ← @KafkaListener consumers (enrichment, event-store)
 ```
 
-**Golden rule:** if a class needs a Spring or storage import, it belongs in
+**Golden rule:** if a class needs a Spring/Kafka or storage import, it belongs in
 `infrastructure` or `interfaces`, never in `domain`.
 
 ---
