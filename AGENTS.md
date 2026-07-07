@@ -175,6 +175,9 @@ We stay close to DDD. Concretely:
 - **No magic numbers.** Window size (10m), score weights, page caps, thresholds
   live in config/named constants, not inline.
 - **Small, focused files.** If a class grows past one clear responsibility, split it.
+- **No comments.** The code is the story — tell it with intention-revealing names
+  and small, focused methods. No Javadoc, block, or inline comments. If a comment
+  feels necessary, that is a signal to rewrite the code, not annotate it.
 
 ---
 
