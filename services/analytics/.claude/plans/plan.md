@@ -1,17 +1,20 @@
 # analytics Service Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development or superpowers:executing-plans. Steps use checkbox (`- [ ]`) syntax.
+>
+> **Patched 2026-07-07** from `reconciliation.md`: the read store is now **in-memory-first** — the in-memory adapter is the DEFAULT runnable bean (with a dev seed) so `:8084` can be dry-run with no Mongo; the Mongo adapter moves behind a `mongo` profile and its Testcontainers task is **deferred to the DB-candidate phase**. Read `.claude/context.md` and `services/contracts/.claude/context.md` first.
 
-**Goal:** Build the read-side **analytics** service (`:8084`) — it serves the statistics summary and event-samples APIs by reading a **Mongo replica** of `event-store`'s enriched-event data. It consumes no Kafka and owns no write model.
+**Goal:** Build the read-side **analytics** service (`:8084`) — serves the statistics summary and event-samples APIs. Data source is a **Mongo replica** of `event-store`'s enriched-event data; for dry runs/sanity it runs on a **seeded in-memory** read store. Consumes no Kafka, owns no write model.
 
-**Architecture:** Hexagonal. A domain-owned `AnalyticsReadStore` port exposes `summarize(...)` and `findSamples(...)`; an **in-memory adapter** backs fast unit tests and a **Mongo adapter** (read-only, aggregation pipeline) backs integration + production. Controllers map the assignment's exact JSON shapes.
+**Architecture:** Hexagonal. A domain-owned `AnalyticsReadStore` port exposes `summarize(...)` and `findSamples(...)`. The **in-memory adapter is the default runnable bean** (`@Profile("!mongo")`, dev-seeded); a **Mongo adapter** (`@Profile("mongo")`, read-only aggregation) is added in the later DB phase. Controllers map the assignment's exact JSON shapes.
 
-**Tech Stack:** Java 21, Spring Boot 3.3.5 (web, validation, actuator, data-mongodb), JUnit 5 + AssertJ, Testcontainers (MongoDB). Builds on the v2 restructure phase (module scaffold already present).
+**Tech Stack:** Java 21, Spring Boot 3.3.5 (web, validation, actuator; data-mongodb only when the `mongo` profile lands), JUnit 5 + AssertJ. Builds on the v2 restructure scaffold.
 
 ## Global Constraints
 
-- Base package `com.akamai.wsa.analytics`. Shared enums come from `com.akamai.wsa.contracts` (`AttackCategory`, `Action`, `Severity`).
-- **Read-only:** no writes, no Kafka. Mongo is connected read-only (reads the replica).
+- Base package `com.akamai.wsa.analytics`. Shared enums come from `com.akamai.wsa.contracts` (`AttackCategory`, `Action`, `Severity`) — see `services/contracts/.claude/context.md`.
+- **Read-only:** no writes, no Kafka.
+- **In-memory-first:** the runnable default (`!mongo` profile) uses the seeded in-memory read store — no external store required to dry-run. Mongo is opt-in (`mongo` profile), deferred to the DB phase.
 - `domain` imports no Spring/Mongo. The read port is domain-owned; adapters are `infrastructure`.
 - Response shapes are the assignment's **exact** JSON — no `{success,data}` envelope. Pagination: `limit` default 20 / max 100 (clamped), `offset` ≥ 0, `total` always present.
 - Records, immutability, intention-revealing names, FULL parameter names (no `v`/`e`). Conventional commits. Milestone tag `v0.5-analytics`.
@@ -20,28 +23,28 @@
 
 ### Task 1: Read model, read port, and in-memory adapter
 
+*(Unchanged from the reconciled plan — pure, no infra; this is correct and first.)*
+
 **Files:**
-- Create: `services/analytics/src/main/java/com/akamai/wsa/analytics/domain/model/EnrichedEventView.java`
-- Create: `.../domain/query/{StatisticsQuery,StatisticsSummary,CategoryStatistics,AttackerStatistics,PathStatistics,SampleQuery,EventSamplesPage}.java`
+- Create: `.../domain/model/EnrichedEventView.java`
+- Create: `.../domain/query/{TimeRange,StatisticsQuery,StatisticsSummary,CategoryStatistics,AttackerStatistics,PathStatistics,SampleQuery,EventSamplesPage}.java`
 - Create: `.../domain/port/AnalyticsReadStore.java`
 - Create: `.../infrastructure/persistence/inmemory/InMemoryAnalyticsReadStore.java`
-- Test: `.../test/java/com/akamai/wsa/analytics/infrastructure/persistence/inmemory/InMemoryAnalyticsReadStoreTest.java`
-- Test support: `.../test/java/com/akamai/wsa/analytics/testsupport/EnrichedEventViews.java`
+- Test: `.../test/.../inmemory/InMemoryAnalyticsReadStoreTest.java`
+- Test support: `.../test/.../testsupport/EnrichedEventViews.java`
 
-**Interfaces / Produces:**
-- `EnrichedEventView` — the read projection of a stored enriched event (flat: eventId, timestamp, configId, policyId, clientIp, hostname, path, method, statusCode, userAgent, ruleId, ruleName, ruleMessage, severity, category, action, country, city, requestSize, responseSize, attackType, threatScore, receivedAt).
-- `AnalyticsReadStore` with:
-  - `StatisticsSummary summarize(StatisticsQuery statisticsQuery)`
-  - `EventSamplesPage findSamples(SampleQuery sampleQuery)`
+**Produces:**
+- `EnrichedEventView` — flat read projection (eventId, timestamp, configId, policyId, clientIp, hostname, path, method, statusCode, userAgent, ruleId, ruleName, ruleMessage, severity, category, action, country, city, requestSize, responseSize, attackType, threatScore, receivedAt).
+- `AnalyticsReadStore { StatisticsSummary summarize(StatisticsQuery); EventSamplesPage findSamples(SampleQuery); }`
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **Step 1: Failing test** (`InMemoryAnalyticsReadStoreTest`)
 
 ```java
 package com.akamai.wsa.analytics.infrastructure.persistence.inmemory;
 
 import com.akamai.wsa.analytics.domain.query.*;
-import com.akamai.wsa.contracts.AttackCategory;
 import com.akamai.wsa.contracts.Action;
+import com.akamai.wsa.contracts.AttackCategory;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
@@ -63,32 +66,28 @@ class InMemoryAnalyticsReadStoreTest {
     @Test
     void summarizesCountsAveragesAndTops() {
         StatisticsSummary summary = store.summarize(new StatisticsQuery(14227, TimeRange.unbounded()));
-
         assertThat(summary.totalEvents()).isEqualTo(3);
         assertThat(summary.byCategory().get(AttackCategory.INJECTION).count()).isEqualTo(2);
         assertThat(summary.byCategory().get(AttackCategory.INJECTION).averageThreatScore()).isEqualTo(75.0);
         assertThat(summary.byAction().get(Action.DENY)).isEqualTo(2);
         assertThat(summary.topAttackers().get(0).clientIp()).isEqualTo("203.0.113.42");
-        assertThat(summary.topAttackers().get(0).count()).isEqualTo(2);
         assertThat(summary.topTargetedPaths().get(0).path()).isEqualTo("/api/v1/login");
     }
 
     @Test
     void returnsSamplesNewestFirstWithTotalAndPaging() {
         EventSamplesPage page = store.findSamples(new SampleQuery(14227, TimeRange.unbounded(), null, null, 2, 0));
-
         assertThat(page.total()).isEqualTo(3);
         assertThat(page.events()).hasSize(2);
-        assertThat(page.events().get(0).eventId()).isEqualTo("evt-3"); // newest by timestamp
+        assertThat(page.events().get(0).eventId()).isEqualTo("evt-3");
     }
 }
 ```
 
-- [ ] **Step 2: Run — expect FAIL.** `mvn -q -pl services/analytics test -Dtest=InMemoryAnalyticsReadStoreTest`
+- [ ] **Step 2: Run — FAIL.** `mvn -q -pl services/analytics test -Dtest=InMemoryAnalyticsReadStoreTest`
+- [ ] **Step 3–5:** Create the records, the port, and `InMemoryAnalyticsReadStore` exactly as specified below, plus an `EnrichedEventViews.view(...)` test builder.
 
-- [ ] **Step 3: Create the read model and query/result records**
-
-`EnrichedEventView.java` (compact — the flat read projection):
+`EnrichedEventView.java`
 ```java
 package com.akamai.wsa.analytics.domain.model;
 
@@ -133,7 +132,7 @@ public record StatisticsQuery(Integer configId, TimeRange timeRange) {
 }
 ```
 
-`CategoryStatistics.java`, `AttackerStatistics.java`, `PathStatistics.java`
+`CategoryStatistics.java` / `AttackerStatistics.java` / `PathStatistics.java`
 ```java
 package com.akamai.wsa.analytics.domain.query;
 public record CategoryStatistics(long count, double averageThreatScore) {}
@@ -203,8 +202,7 @@ import java.util.List;
 public record EventSamplesPage(long total, int limit, int offset, List<EnrichedEventView> events) {}
 ```
 
-- [ ] **Step 4: Create the read port**
-
+`AnalyticsReadStore.java`
 ```java
 package com.akamai.wsa.analytics.domain.port;
 
@@ -219,8 +217,7 @@ public interface AnalyticsReadStore {
 }
 ```
 
-- [ ] **Step 5: Implement the in-memory adapter** (reference behavior for the Mongo adapter)
-
+`InMemoryAnalyticsReadStore.java`
 ```java
 package com.akamai.wsa.analytics.infrastructure.persistence.inmemory;
 
@@ -301,69 +298,90 @@ public class InMemoryAnalyticsReadStore implements AnalyticsReadStore {
 }
 ```
 
-Add `EnrichedEventViews.view(...)` test builder producing an `EnrichedEventView` with the given key fields and sensible defaults for the rest.
-
-- [ ] **Step 6: Run — expect PASS.** **Step 7: Commit** — `feat(analytics): add read model, port, and in-memory read store`.
+- [ ] **Step 6: Run — PASS. Commit** — `feat(analytics): add read model, port, and in-memory read store`.
 
 ---
 
 ### Task 2: Statistics use case + controller
 
-**Files:**
-- Create: `.../application/SummarizeStatistics.java` (interface), `.../application/SummarizeStatisticsService.java`
-- Create: `.../interfaces/rest/StatsController.java`, `.../interfaces/rest/StatisticsSummaryResponse.java`
-- Test: `.../test/.../interfaces/rest/StatsControllerTest.java`
+*(Unchanged — achievable now against the in-memory store, zero DB.)*
 
-- [ ] **Step 1: Write `@WebMvcTest` StatsControllerTest** — mock `SummarizeStatistics`, GET `/v1/stats/summary?configId=14227&from=...&to=...`, assert JSON: `configId`, `timeRange.from/to`, `totalEvents`, `byCategory.INJECTION.count`/`.avgThreatScore`, `byAction.DENY`, `topAttackers[0].clientIp/count/avgThreatScore`, `topTargetedPaths[0].path/count`. Assert averages render to one decimal.
-- [ ] **Step 2: Run — FAIL.**
-- [ ] **Step 3:** `SummarizeStatistics` (interface: `StatisticsSummary summarize(StatisticsQuery)`); `SummarizeStatisticsService implements SummarizeStatistics` (a `@Service` delegating to `AnalyticsReadStore`).
-- [ ] **Step 4:** `StatsController`: parse `configId` (nullable), ISO-8601 `from`/`to` (nullable → `TimeRange.unbounded()`), build `StatisticsQuery`, call the use case, map to `StatisticsSummaryResponse` (category-name string keys via `name()`, averages rounded to one decimal with a helper, `clientIp` already a string). Return 200.
-- [ ] **Step 5: Run — PASS. Commit** — `feat(analytics): add statistics summary endpoint`.
+- [ ] **Step 1:** `@WebMvcTest StatsControllerTest` — mock `SummarizeStatistics`, `GET /v1/stats/summary?configId=14227&from=&to=`, assert JSON: `configId`, `timeRange.from/to`, `totalEvents`, `byCategory.INJECTION.count`/`.avgThreatScore`, `byAction.DENY`, `topAttackers[0].clientIp/count/avgThreatScore`, `topTargetedPaths[0].path/count`; averages to one decimal. — Run FAIL.
+- [ ] **Step 2:** `SummarizeStatistics` (interface `StatisticsSummary summarize(StatisticsQuery)`); `SummarizeStatisticsService implements SummarizeStatistics` (`@Service`, delegates to `AnalyticsReadStore`).
+- [ ] **Step 3:** `StatsController`: parse nullable `configId`, ISO-8601 `from`/`to` (null → `TimeRange.unbounded()`), build query, call use case, map to `StatisticsSummaryResponse` (category-name string keys via `name()`, averages rounded to one decimal, `clientIp` already string). 200. — Run PASS. Commit `feat(analytics): add statistics summary endpoint`.
 
 ---
 
 ### Task 3: Samples use case + controller + shared event response
 
-**Files:**
-- Create: `.../application/FetchEventSamples.java` (interface), `.../application/FetchEventSamplesService.java`
-- Create: `.../interfaces/rest/SamplesController.java`, `.../interfaces/rest/SecurityEventResponse.java`, `.../interfaces/rest/EventSamplesResponse.java`
-- Test: `.../test/.../interfaces/rest/SamplesControllerTest.java`
+*(Unchanged — achievable now.)*
 
-- [ ] **Step 1: Write `@WebMvcTest` SamplesControllerTest** — mock `FetchEventSamples`, GET `/v1/events/samples?configId=&category=&limit=2&offset=0`; assert `{total, limit, offset, results:[...]}`, `results` newest-first, and each result is the flat enriched-event shape (original DLR fields + `attackType` + `threatScore` + `receivedAt`). Assert invalid `category`/`action` enum → 400; `limit=500` clamps to 100.
-- [ ] **Step 2: Run — FAIL.**
-- [ ] **Step 3:** `FetchEventSamples` (interface: `EventSamplesPage fetch(SampleQuery)`); `FetchEventSamplesService implements FetchEventSamples` delegating to `AnalyticsReadStore`.
-- [ ] **Step 4:** `SecurityEventResponse` maps one `EnrichedEventView` → flat assignment JSON (nested `rule{...}`, `geoLocation{...}` reconstructed for output). `EventSamplesResponse(total, limit, offset, results)`. `SamplesController`: all params optional, parse enums (invalid → 400 via advice), `clampLimit`, offset ≥ 0, build `SampleQuery`, call use case, map, return 200.
-- [ ] **Step 5: Run — PASS. Commit** — `feat(analytics): add event samples endpoint`.
+- [ ] **Step 1:** `@WebMvcTest SamplesControllerTest` — mock `FetchEventSamples`, `GET /v1/events/samples?configId=&category=&limit=2&offset=0`; assert `{total,limit,offset,results:[...]}`, newest-first, each result the flat enriched-event shape (DLR fields + `attackType` + `threatScore` + `receivedAt`); invalid enum → 400; `limit=500` clamps to 100. — Run FAIL.
+- [ ] **Step 2:** `FetchEventSamples` (interface `EventSamplesPage fetch(SampleQuery)`); `FetchEventSamplesService` (`@Service`) delegating to `AnalyticsReadStore`.
+- [ ] **Step 3:** `SecurityEventResponse` maps one `EnrichedEventView` → flat assignment JSON (nested `rule{...}`/`geoLocation{...}` reconstructed); `EventSamplesResponse(total,limit,offset,results)`; `SamplesController` all-optional params, enum-parse (invalid → 400 via `@RestControllerAdvice`), `clampLimit`, offset ≥ 0. 200. — Run PASS. Commit `feat(analytics): add event samples endpoint`.
 
 ---
 
-### Task 4: Mongo read adapter + Testcontainers integration
+### Task 4: Make in-memory the default runnable bean + dev seed  ⟵ NEW (in-memory-first)
 
 **Files:**
-- Create: `.../infrastructure/persistence/mongo/EnrichedEventDocument.java` (`@Document("events")`, read mapping matching event-store's schema)
-- Create: `.../infrastructure/persistence/mongo/MongoAnalyticsReadStore.java` (implements `AnalyticsReadStore` via `MongoTemplate` aggregation for summarize; find+sort+skip+limit+count for samples)
-- Create: `.../infrastructure/config/ReadStoreConfiguration.java` (bean selection: Mongo adapter as primary; in-memory used only in tests)
-- Test: `.../test/.../infrastructure/persistence/mongo/MongoAnalyticsReadStoreIT.java` (`@Testcontainers` MongoDB, seed documents, assert aggregation + paging match the in-memory reference)
+- Create: `.../infrastructure/config/ReadStoreConfiguration.java`
+- Create: `.../infrastructure/seed/DevDataSeed.java` (a small fixture list of `EnrichedEventView`s)
+- Test: `.../test/.../ReadStoreConfigurationTest.java` (context loads with default profile; the in-memory store bean is present and seeded)
 
-- [ ] **Step 1: Write the Testcontainers IT** — start `MongoDBContainer`, insert enriched documents, assert `summarize`/`findSamples` return the same results the in-memory store does for the same data.
-- [ ] **Step 2: Run — FAIL.**
-- [ ] **Step 3:** Implement `EnrichedEventDocument` + `MongoAnalyticsReadStore` (aggregation pipeline: `$match` config/time/category/action → `$group` for category avg + action counts + attacker/path top-N via `$sortByCount`/`$limit`; samples via `Query` with `Sort.by(DESC,"timestamp")`, `.skip`/`.limit`, and a separate `count`). Read-only Mongo connection.
-- [ ] **Step 4: Run — PASS.** **Step 5: Commit** — `feat(analytics): add MongoDB read adapter with aggregation`.
+- [ ] **Step 1:** Write a `@SpringBootTest` (default profile) asserting an `AnalyticsReadStore` bean exists and returns the seeded data (e.g. `summarize` totalEvents > 0). — Run FAIL.
+- [ ] **Step 2:** `DevDataSeed` — a static method returning ~10–20 realistic `EnrichedEventView`s (varied configId/category/action/clientIp/path/timestamp) so both endpoints return meaningful data with no external store.
+- [ ] **Step 3:** `ReadStoreConfiguration`:
+```java
+package com.akamai.wsa.analytics.infrastructure.config;
+
+import com.akamai.wsa.analytics.domain.port.AnalyticsReadStore;
+import com.akamai.wsa.analytics.infrastructure.persistence.inmemory.InMemoryAnalyticsReadStore;
+import com.akamai.wsa.analytics.infrastructure.seed.DevDataSeed;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Profile;
+
+@Configuration
+public class ReadStoreConfiguration {
+
+    // Default runnable store for dry runs / sanity — active unless the `mongo` profile is on.
+    @Bean
+    @Profile("!mongo")
+    public AnalyticsReadStore inMemoryAnalyticsReadStore() {
+        return new InMemoryAnalyticsReadStore(DevDataSeed.seedEvents());
+    }
+}
+```
+- [ ] **Step 4: Run — PASS.** Dry-run: `mvn -q -pl services/analytics spring-boot:run`, then `curl -s localhost:8084/v1/stats/summary` and `/v1/events/samples` return seeded results with **no Mongo running**. Commit `feat(analytics): default to seeded in-memory read store for dry runs`.
 
 ---
 
-### Task 5 (optional bonus B3): Time-series endpoint
+### Task 5 (DEFERRED to the DB-candidate phase): Mongo read adapter
 
-- [ ] Add `Interval` enum (`ONE_MINUTE`/`FIVE_MINUTES`/`ONE_HOUR`) with `floor(instant)` + `fromLabel("1m"|"5m"|"1h")`; a `BuildTimeSeries` use case bucketing matched events into `{bucketStart,count}` (TreeMap); `TimeSeriesController` for `GET /v1/stats/timeseries` (unknown interval → 400). Unit + `@WebMvcTest`. Commit — `feat(analytics): add time-series endpoint`. Keep OPTIONAL — implement only if time allows.
+> ⏸ **Do NOT build now.** Per the standing in-memory-first directive, the Mongo
+> adapter + Testcontainers integration land when we perfect the logic and compare
+> DB candidates. Captured here so the seam is ready.
+
+- `EnrichedEventDocument` (`@Document("events")`) — **must match `event-store`'s document shape** (`_id = eventId`, field names, indexes); confirm against event-store before writing (accepted §7 schema coupling — see `reconciliation.md`).
+- `MongoAnalyticsReadStore implements AnalyticsReadStore` (`@Profile("mongo")`) — `MongoTemplate` aggregation for `summarize` (`$match` → `$group`/`$sortByCount`/`$limit`), `Query` + `Sort.by(DESC,"timestamp")` + skip/limit + count for `findSamples`. Read-only connection.
+- Testcontainers `MongoAnalyticsReadStoreIT` — assert it matches the in-memory reference for the same seeded data.
+- Add `spring-boot-starter-data-mongodb` + Testcontainers deps to the pom at this point.
+
+---
+
+### Optional bonuses touching this service
+
+- **B3 time-series** (`GET /v1/stats/timeseries?...&interval={1m|5m|1h}`) — an `Interval` enum + bucketing use case + controller. See `docs/superpowers/plans/2026-07-07-bonuses.md`. OPTIONAL.
+- **B4 rate-limiting** — a `RateLimitFilter` (429 per client IP) scoped to `/v1/stats/**` and `/v1/events/samples`. **These endpoints are owned here, so B4 is implemented in THIS service** (its spec lives in the bonuses plan). OPTIONAL — flag, don't block.
 
 ---
 
 ### Final: verify + tag
-
-- [ ] `mvn -q -pl services/analytics verify` green. Dry-run on `:8084` against a seeded Mongo; `curl` both endpoints; confirm JSON shapes.
+- [ ] `mvn -q -pl services/analytics verify` green. Dry-run on `:8084` with the **default (in-memory) profile** — no Mongo needed; `curl` both endpoints; confirm JSON shapes.
 - [ ] Tag `v0.5-analytics`.
 
 ## Self-Review
-- Covers stats summary + samples against the assignment's exact shapes, read-only from Mongo, with an in-memory reference adapter for fast tests and a Testcontainers-verified Mongo adapter.
-- No placeholders; every step has concrete code or a precise instruction with the referenced types defined in Task 1.
-- Reuses the aggregation/paging semantics specced in the Part 3 and Part 4 plans, re-homed to the read-only analytics service; enums sourced from `contracts`.
+- Stats + samples against the assignment's exact shapes, read-only, with the **in-memory read store as the runnable default (seeded)** so dry runs need no DB; Mongo deferred behind a profile to the DB phase (matches the in-memory-first directive).
+- No placeholders; referenced types are all defined in Task 1.
+- No `contracts` API drift: analytics reads Mongo/​in-memory documents and only borrows the shared **enums** from contracts — it does not touch `MessageEnvelope`/`EnrichedEventMessage`. If the event-store document schema changes, re-check Task 5's mapping (logged via `services/contracts/.claude/CHANGELOG.md` only if a shared type moves; the Mongo doc shape is an event-store concern to confirm at build time).

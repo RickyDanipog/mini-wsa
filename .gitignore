@@ -23,8 +23,8 @@ out/
 # --- Logs ---
 *.log
 
-# --- Local tooling config ---
-.claude/
+# --- Local tooling config (root only; per-service .claude/ is tracked) ---
+/.claude/
 
 # --- Personal, local-only notes (never pushed) ---
 *.local.md

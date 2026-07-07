@@ -1,22 +1,80 @@
 # Gateway Service Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+>
+> **Patched 2026-07-07** against the real `contracts` API and the reconciliation
+> report (`reconciliation.md`): envelope construction uses the 3-arg
+> `MessageEnvelope.of(...)`; the deferred `spring-kafka` starter + a `Clock` bean
+> are added in a new Task 0; the `receivedAt` decision is documented.
 
 **Goal:** Build the `gateway` service — the write-path entry point. It accepts security events over REST (single or batch), validates them, transforms them into the shared `RawEventMessage` contract, and publishes them (enveloped, correlation-tagged) to the Kafka topic `events.raw`. It stores nothing.
 
-**Architecture:** Hexagonal inside the service. REST controller + DTOs + validation live in `interfaces/rest`; the outbound `RawEventPublisher` port lives in the domain/application boundary and is implemented by a Kafka adapter in `infrastructure`. See `docs/03-sdd.md` v2 §3/§5.1 and the v2 restructure plan (`2026-07-07-v2-restructure.md`). Reuses the ingestion/validation logic from `2026-07-07-part1-ingestion.md`, but **publishes instead of storing**.
+**Architecture:** Hexagonal inside the service. REST controller + DTOs + validation live in `interfaces/rest`; the outbound `RawEventPublisher` port lives in the application boundary and is implemented by a Kafka adapter in `infrastructure`. See `docs/03-sdd.md` v2 §3/§5.1 and `docs/superpowers/plans/2026-07-07-v2-restructure.md`. Reuses the ingestion/validation logic from `2026-07-07-part1-ingestion.md`, but **publishes instead of storing**.
 
 **Tech Stack:** Java 21, Spring Boot 3.3.5 (web, validation, actuator, `spring-kafka`), the `contracts` module, JUnit 5 + MockMvc + `@EmbeddedKafka`.
 
 ## Global Constraints
 
 - Base package `com.akamai.wsa.gateway`. Service port `8081`.
-- Depends on the `contracts` module for `RawEventMessage`, `RuleMessage`, `GeoLocationMessage`, `MessageEnvelope`, and enums `AttackCategory`/`Action`/`Severity`.
+- Depends on the `contracts` module. **Read `services/contracts/.claude/context.md` first** — the authoritative API. Key facts this plan relies on:
+  - `MessageEnvelope.version` is an **`int`** (`CURRENT_VERSION == 1`); construct via **`MessageEnvelope.of(correlationId, occurredAt, payload)`** (3-arg) — never pass a String version.
+  - `RawEventMessage.clientIp` is a **`String`**; `RuleMessage`/`GeoLocationMessage` and the enums `AttackCategory`/`Action`/`Severity` come from `contracts`.
 - Topic name from config key `wsa.kafka.topics.events-raw` (default `events.raw`) — never a literal in code. Messages keyed by `clientIp`.
-- Every published message is wrapped in a `MessageEnvelope` carrying `correlationId` (from `x-correlation-id` header, else generated), `occurredAt` (from an injected `java.time.Clock`), and `version`.
+- Every published message is wrapped in a `MessageEnvelope` carrying `correlationId` (from `x-correlation-id` header, else generated) and `occurredAt` (from an injected `java.time.Clock`).
+- **`receivedAt` decision (locked):** the gateway does **not** stamp `receivedAt`. Enrichment stamps it when it processes the event (SDD §5.1). The envelope's `occurredAt` records gateway accept-time and travels with the message, so true ingestion time is still available downstream if we later choose to prefer it.
 - **All-or-nothing** batch validation: any invalid event → `400 {error:{code,message,details[]}}`; all valid → `201 {acceptedCount}`. No `{success,data}` envelope on responses.
 - Records for DTOs, immutability, intention-revealing names, FULL descriptive parameter names (no `v`/`e`/`req`). Single-line structured logging with `correlationId` as the third arg. Conventional commits. `domain` imports no Spring/Kafka.
-- Assumes the gateway module scaffold (pom, `GatewayApplication`, `application.yml`, `/v1/ping`) already exists from the restructure phase.
+- The gateway module scaffold (pom, `GatewayApplication`, `application.yml`, `/v1/ping`) exists from the restructure phase, but the Kafka starter and a `Clock` bean were **deferred** — Task 0 adds them.
+
+---
+
+### Task 0: Add the Kafka starter and a `Clock` bean
+
+**Files:**
+- Modify: `services/gateway/pom.xml` (add `spring-kafka`; test: `spring-kafka-test`, `awaitility`)
+- Create: `services/gateway/src/main/java/com/akamai/wsa/gateway/infrastructure/config/GatewayConfig.java`
+
+- [ ] **Step 1: Add dependencies to `services/gateway/pom.xml`**
+```xml
+<dependency>
+    <groupId>org.springframework.kafka</groupId>
+    <artifactId>spring-kafka</artifactId>
+</dependency>
+<dependency>
+    <groupId>org.springframework.kafka</groupId>
+    <artifactId>spring-kafka-test</artifactId>
+    <scope>test</scope>
+</dependency>
+<dependency>
+    <groupId>org.awaitility</groupId>
+    <artifactId>awaitility</artifactId>
+    <scope>test</scope>
+</dependency>
+```
+
+- [ ] **Step 2: Add the config (Clock + enable topic properties)**
+```java
+package com.akamai.wsa.gateway.infrastructure.config;
+
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+import java.time.Clock;
+
+@Configuration
+@EnableConfigurationProperties(KafkaTopics.class)
+public class GatewayConfig {
+
+    @Bean
+    public Clock clock() {
+        return Clock.systemUTC();
+    }
+}
+```
+
+- [ ] **Step 3: Verify the module still builds** — `mvn -q -pl services/gateway test` (the `/v1/ping` scaffold test stays green; Kafka autoconfig won't connect without a listener/broker at test time).
+- [ ] **Step 4: Commit** — `chore(gateway): add spring-kafka and Clock bean`.
 
 ---
 
@@ -212,12 +270,7 @@ import com.akamai.wsa.contracts.RawEventMessage;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.kafka.core.ConsumerFactory;
 import org.springframework.kafka.test.context.EmbeddedKafka;
-import org.springframework.kafka.test.utils.KafkaTestUtils;
-
-import java.time.Instant;
-import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
@@ -227,7 +280,7 @@ import static org.awaitility.Awaitility.await;
 class KafkaRawEventPublisherIT {
 
     @Autowired
-    RawEventPublisherProbeSupport support; // helper wiring the publisher + a test consumer (defined in the test config below)
+    RawEventPublisherProbeSupport support; // helper wiring the publisher + a test consumer (test config)
 
     @Test
     void publishesEnvelopedMessageToEventsRaw() {
@@ -244,7 +297,7 @@ class KafkaRawEventPublisherIT {
 }
 ```
 
-> Note for the implementer: create a small `@TestConfiguration` (`RawEventPublisherProbeSupport`) that autowires the real `RawEventPublisher` and builds a raw `KafkaConsumer` on `events.raw` via `ConsumerFactory`/`KafkaTestUtils`, deserializing the JSON envelope. Keep it in test scope. Add `org.awaitility:awaitility` (test) and `org.springframework.kafka:spring-kafka-test` to the gateway pom.
+> Implementer note: build the sample envelope with `MessageEnvelope.of("corr-123", Instant.now(), rawEventMessage)`. Create a small `@TestConfiguration` (`RawEventPublisherProbeSupport`) that autowires the real `RawEventPublisher` and builds a raw `KafkaConsumer` on `events.raw` via `ConsumerFactory`/`KafkaTestUtils`, deserializing the JSON envelope with `new TypeReference<MessageEnvelope<RawEventMessage>>(){}`. Keep it test scope.
 
 - [ ] **Step 2: Run — expect FAIL** (publisher/port missing).
 
@@ -318,7 +371,7 @@ spring:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
 ```
-Enable the properties record: add `@ConfigurationPropertiesScan` to `GatewayApplication` (or `@EnableConfigurationProperties(KafkaTopics.class)`).
+`KafkaTopics` is enabled via `@EnableConfigurationProperties(KafkaTopics.class)` on `GatewayConfig` (Task 0).
 
 - [ ] **Step 4: Run — expect PASS.**
 - [ ] **Step 5: Commit** — `feat(gateway): publish enveloped raw events to Kafka`.
@@ -330,12 +383,12 @@ Enable the properties record: add `@ConfigurationPropertiesScan` to `GatewayAppl
 **Files:**
 - Create: `.../interfaces/rest/IngestController.java`
 - Create: `.../interfaces/rest/IngestResponse.java` (`record IngestResponse(int acceptedCount)`)
-- Create: `.../interfaces/rest/error/ApiError.java`, `.../error/ApiErrorBody.java`, `.../error/GatewayExceptionHandler.java` (`@RestControllerAdvice`)
-- Create: `.../application/CorrelationId.java` (mint/resolve helper) — optional small helper
+- Create: `.../interfaces/rest/MalformedRequestException.java`
+- Create: `.../interfaces/rest/error/ApiErrorBody.java`, `.../error/BatchValidationException.java`, `.../error/GatewayExceptionHandler.java`
 - Test: `.../test/java/com/akamai/wsa/gateway/interfaces/rest/IngestControllerTest.java` (`@WebMvcTest`)
 
 **Interfaces:**
-- Consumes: `EventRequestMapper`, `RawEventPublisher` (mocked in the web test), `jakarta.validation.Validator`, `Clock`.
+- Consumes: `EventRequestMapper`, `RawEventPublisher` (mocked in the web test), `jakarta.validation.Validator`, `Clock`, `ObjectMapper`.
 - Produces: `POST /v1/events/ingest` → `201 {acceptedCount}` or `400 {error:{code,message,details:[{field,message}]}}`.
 
 - [ ] **Step 1: Write the failing `@WebMvcTest`**
@@ -419,7 +472,7 @@ public record IngestResponse(int acceptedCount) {
 }
 ```
 
-`ApiError.java` / `ApiErrorBody.java`
+`ApiErrorBody.java`
 ```java
 package com.akamai.wsa.gateway.interfaces.rest.error;
 
@@ -467,8 +520,6 @@ import java.util.UUID;
 @RequestMapping("/v1/events")
 public class IngestController {
 
-    private static final String SCHEMA_VERSION = "1";
-
     private final ObjectMapper objectMapper;
     private final Validator validator;
     private final EventRequestMapper eventRequestMapper;
@@ -509,7 +560,7 @@ public class IngestController {
         Instant occurredAt = Instant.now(clock);
         for (IngestEventRequest ingestEventRequest : ingestEventRequests) {
             RawEventMessage rawEventMessage = eventRequestMapper.toRawEventMessage(ingestEventRequest);
-            rawEventPublisher.publish(new MessageEnvelope<>(correlationId, occurredAt, SCHEMA_VERSION, rawEventMessage));
+            rawEventPublisher.publish(MessageEnvelope.of(correlationId, occurredAt, rawEventMessage));
         }
         return new IngestResponse(ingestEventRequests.size());
     }
@@ -534,9 +585,9 @@ public class IngestController {
 }
 ```
 
-Add the two exceptions and the advice:
+> **Patch note:** the envelope is now built with `MessageEnvelope.of(correlationId, occurredAt, rawEventMessage)` — the old `new MessageEnvelope<>(..., SCHEMA_VERSION, ...)` (String version) won't compile because `version` is an `int`. The `SCHEMA_VERSION` constant is removed; the factory sets `version = CURRENT_VERSION`.
 
-`MalformedRequestException.java` (in `interfaces/rest`)
+`MalformedRequestException.java`
 ```java
 package com.akamai.wsa.gateway.interfaces.rest;
 
@@ -547,7 +598,7 @@ public class MalformedRequestException extends RuntimeException {
 }
 ```
 
-`BatchValidationException.java` (in `interfaces/rest/error`)
+`BatchValidationException.java`
 ```java
 package com.akamai.wsa.gateway.interfaces.rest.error;
 
@@ -605,8 +656,6 @@ public class GatewayExceptionHandler {
 }
 ```
 
-Provide a `Clock` bean (`@Bean Clock clock() { return Clock.systemUTC(); }`) in an infrastructure config if the restructure phase didn't already.
-
 - [ ] **Step 5: Run — expect PASS** (`mvn -q -pl services/gateway test -Dtest=IngestControllerTest`).
 - [ ] **Step 6: Run the whole module** — `mvn -q -pl services/gateway test`.
 - [ ] **Step 7: Commit** — `feat(gateway): add all-or-nothing ingest endpoint publishing to events.raw`.
@@ -615,7 +664,7 @@ Provide a `Clock` bean (`@Bean Clock clock() { return Clock.systemUTC(); }`) in 
 
 ### Task 4: Dry-run and milestone
 
-- [ ] **Step 1:** `mvn -q -pl services/gateway -am spring-boot:run` (needs a broker; run `docker compose up -d kafka` first, or point at the compose kafka).
+- [ ] **Step 1:** `docker compose up -d kafka` (or the compose kafka), then `mvn -q -pl services/gateway -am spring-boot:run`.
 - [ ] **Step 2:** curl the endpoint:
 ```bash
 curl -s -XPOST localhost:8081/v1/events/ingest -H 'content-type: application/json' \
@@ -630,8 +679,8 @@ Verify a message on `events.raw` (via `kafka-console-consumer` or the enrichment
 
 **Spec coverage:** single + batch ingest ✓; required-field/enum/timestamp validation ✓; all-or-nothing 400 with details ✓ (Task 3); 201 with acceptedCount ✓; publish enveloped, correlation-tagged, clientIp-keyed to `events.raw` ✓ (Task 2); no storage in gateway ✓.
 
-**Placeholder scan:** none — all steps carry complete code. The one implementer note (test probe `@TestConfiguration`) is explicit about what to build.
+**Contracts alignment (patched):** envelope built via `MessageEnvelope.of(...)` (int version); `clientIp` String; DTO→`RawEventMessage` mapping matches `contracts`. Kafka starter + `Clock` added in Task 0.
 
-**Type consistency:** `RawEventMessage`/`RuleMessage`/`GeoLocationMessage`/`MessageEnvelope` and enums come from `contracts`; `EventRequestMapper.toRawEventMessage`, `RawEventPublisher.publish(MessageEnvelope<RawEventMessage>)`, and `IngestResponse(acceptedCount)` are used identically across tasks. `receivedAt` is intentionally NOT set here — enrichment stamps it (SDD §5.1).
+**`receivedAt`:** intentionally NOT set at the gateway — enrichment stamps it (SDD §5.1); the envelope's `occurredAt` carries gateway accept-time.
 
-**Cross-service note:** depends on `contracts` field shapes (Task 1 of the restructure plan) and the gateway module scaffold; the `KafkaTopics` prefix `wsa.kafka.topics` matches `application.yml`.
+**Cross-service:** the `events.raw` (de)serialization must be paired with enrichment's consumer (JSON envelope via `TypeReference<MessageEnvelope<RawEventMessage>>`) — coordinate at restructure Task 4.

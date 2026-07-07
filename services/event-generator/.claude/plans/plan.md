@@ -1,24 +1,30 @@
-# Part 5 — Data Generator Implementation Plan
+# event-generator — Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: superpowers:subagent-driven-development or superpowers:executing-plans. Steps use checkbox (`- [ ]`) syntax.
+>
+> **SHARED CONTRACTS:** the generated event JSON must mirror the gateway's ingest
+> request shape, which mirrors `contracts.RawEventMessage`. Read
+> `services/contracts/.claude/context.md` before implementing; contract changes
+> are logged in `services/contracts/.claude/CHANGELOG.md` and require re-checking
+> this plan.
 
-**Goal:** A standalone `event-generator` service that produces realistic, seed-deterministic security events — including attack waves from a single IP hitting a single path — and either writes them as JSON or POSTs them in batches to the ingestion API.
+**Goal:** A standalone `event-generator` CLI service that produces realistic, seed-deterministic security events — including attack waves from a single IP hitting a single path — and either writes them as JSON or POSTs them in batches to the **gateway's** ingestion API.
 
-**Architecture:** A second Spring Boot module in the mono-repo (`services/event-generator`, package `com.akamai.wsa.generator`). Generation is pure and seeded (`java.util.Random` + a fixed base timestamp), so it is fully testable without a clock or a live server. Output is split behind small units: a `JsonEventWriter` (file/stdout) and an `IngestionFeeder` that drives an `IngestionClient` port (real `RestClient` impl; faked in tests). A `CommandLineRunner` wires config → generate → output.
+**Architecture:** A Spring Boot module in the mono-repo (`services/event-generator`, package `com.akamai.wsa.generator`). Generation is pure and seeded (`java.util.Random` + a fixed base timestamp), fully testable without a clock or a live server. Output is split behind small units: a `JsonEventWriter` (file/stdout) and an `IngestionFeeder` driving an `IngestionClient` port (real `RestClient` impl; faked in tests). A `CommandLineRunner` wires config → generate → output.
 
 **Tech Stack:** Java 21, Spring Boot 3.3.5, Jackson (records + JavaTimeModule), JUnit 5 + AssertJ.
 
 ## Global Constraints
 
-- **Java version:** 21. `maven.compiler.release=21` (inherited from `mini-wsa-parent`).
+- **Java 21**; `maven.compiler.release=21` (inherited from `mini-wsa-parent`).
 - **Base package:** `com.akamai.wsa.generator`.
 - **Module version:** `0.1.0-SNAPSHOT`; parent = `mini-wsa-parent` (`../../pom.xml`).
-- **Determinism:** all randomness flows from an injected `java.util.Random` seeded from config; timestamps derive from a configured base `Instant` + offsets. NEVER use `Instant.now()`, `Math.random()`, or unseeded `Random` in generation code. Same seed → identical events.
+- **Determinism:** all randomness flows from an injected `java.util.Random` seeded from config; timestamps derive from a configured base `Instant` + offsets. NEVER use `Instant.now()`, `Math.random()`, or an unseeded `Random`. Same seed → identical events.
 - **Immutability:** events and config are `record`s; no mutation of inputs.
 - **Naming:** intention-revealing; FULL descriptive parameter names (no `v`, `e`, `idx` — use `index`, `random`, `securityEvent`).
-- **Ingest target:** mini-wsa runs locally on **8081**; default target URL `http://localhost:8081/v1/events/ingest`.
-- **Event JSON shape:** must match the assignment's DLR schema exactly (flat top-level fields + nested `rule` and `geoLocation`), so it is directly ingestible.
-- **Commits:** conventional commits, imperative, lowercase, ≤72 chars. Milestone tag `v0.5-generator` at the end.
+- **Ingest target:** the **gateway** runs locally on **8081**; default target URL `http://localhost:8081/v1/events/ingest`. A *full-pipeline* dry run (verifying persistence/analytics) also needs **enrichment + event-store + Kafka** up via docker-compose; a generator↔gateway-only run validates **ingestion acceptance** (`201`) only, since the gateway publishes to Kafka rather than storing.
+- **Event JSON shape:** must mirror the gateway's `IngestEventRequest` / `contracts.RawEventMessage` (flat top-level fields + nested `rule` and `geoLocation`, enum names as Strings), so it is directly ingestible as a single object or an array (batch).
+- **Commits:** conventional commits, imperative, lowercase, ≤72 chars. Milestone tag `v0.6-generator` at the end.
 
 ---
 
@@ -26,15 +32,14 @@
 
 **Files:**
 - Create: `services/event-generator/pom.xml`
-- Modify: `pom.xml` (root) — add `<module>services/event-generator</module>`
+- Modify: `pom.xml` (root) — append `<module>services/event-generator</module>`
 - Create: `services/event-generator/src/main/java/com/akamai/wsa/generator/GeneratorApplication.java`
 - Create: `services/event-generator/src/main/java/com/akamai/wsa/generator/GeneratorProperties.java`
 - Create: `services/event-generator/src/main/resources/application.yml`
 - Test: `services/event-generator/src/test/java/com/akamai/wsa/generator/GeneratorPropertiesTest.java`
-- Remove: `services/event-generator/src/main/java/com/akamai/wsa/generator/.gitkeep` (and the test `.gitkeep`) if present
+- Remove any `.gitkeep` under the module's source dirs if present.
 
 **Interfaces:**
-- Consumes: nothing.
 - Produces: `GeneratorProperties(long seed, int totalEvents, int waveCount, int waveSize, Instant baseTimestamp, String targetUrl, int batchSize, OutputMode outputMode, String outputFile)` with `enum OutputMode { JSON_FILE, STDOUT, HTTP }`.
 
 - [ ] **Step 1: Write the failing test**
@@ -86,13 +91,19 @@ Expected: FAIL — module/types do not exist (build error).
 
 - [ ] **Step 3: Register the module in the root `pom.xml`**
 
-In `pom.xml` `<modules>`, add the generator alongside mini-wsa:
+The v2 reactor already lists six modules — **append** the generator (do not replace the list):
 ```xml
     <modules>
+        <module>services/contracts</module>
+        <module>services/gateway</module>
+        <module>services/enrichment</module>
+        <module>services/event-store</module>
+        <module>services/analytics</module>
         <module>services/mini-wsa</module>
         <module>services/event-generator</module>
     </modules>
 ```
+(If `mini-wsa` has already been retired by the restructure Task 5, it will be absent — just ensure `services/event-generator` is present alongside the current modules.)
 
 - [ ] **Step 4: Write the module `pom.xml`**
 
@@ -117,10 +128,6 @@ In `pom.xml` `<modules>`, add the generator alongside mini-wsa:
     <dependencies>
         <dependency>
             <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
         <dependency>
@@ -140,7 +147,7 @@ In `pom.xml` `<modules>`, add the generator alongside mini-wsa:
     </build>
 </project>
 ```
-(`spring-boot-starter-web` brings `RestClient` + Jackson; the app runs as a CLI and exits, so no server is started — see Step 6.)
+(`spring-boot-starter-web` brings `RestClient` + Jackson; the app runs as a CLI and exits — no server is started, see Step 7. Optionally add a `contracts` dependency if you choose to serialize `contracts.RawEventMessage` directly — see Task 4's note.)
 
 - [ ] **Step 5: Write `GeneratorProperties`**
 
@@ -205,7 +212,7 @@ generator:
   wave-count: 20
   wave-size: 50
   base-timestamp: "2026-05-20T14:00:00Z"
-  target-url: "http://localhost:8081/v1/events/ingest"
+  target-url: "http://localhost:8081/v1/events/ingest"   # the gateway
   batch-size: 500
   output-mode: STDOUT
   output-file: "generated-events.json"
@@ -232,19 +239,16 @@ git commit -m "chore: scaffold event-generator module with bound config"
 ### Task 2: Event model + seed-deterministic single-event generator
 
 **Files:**
-- Create: `services/event-generator/src/main/java/com/akamai/wsa/generator/model/GeneratedRule.java`
-- Create: `services/event-generator/src/main/java/com/akamai/wsa/generator/model/GeneratedGeoLocation.java`
-- Create: `services/event-generator/src/main/java/com/akamai/wsa/generator/model/GeneratedEvent.java`
-- Create: `services/event-generator/src/main/java/com/akamai/wsa/generator/generate/SecurityEventGenerator.java`
-- Test: `services/event-generator/src/test/java/com/akamai/wsa/generator/generate/SecurityEventGeneratorTest.java`
+- Create: `.../generator/model/GeneratedRule.java`, `GeneratedGeoLocation.java`, `GeneratedEvent.java`
+- Create: `.../generator/generate/SecurityEventGenerator.java`
+- Test: `.../generator/generate/SecurityEventGeneratorTest.java`
 
 **Interfaces:**
-- Consumes: nothing.
 - Produces:
-  - `GeneratedEvent(String eventId, Instant timestamp, int configId, String policyId, String clientIp, String hostname, String path, String method, int statusCode, String userAgent, GeneratedRule rule, String action, GeneratedGeoLocation geoLocation, long requestSize, long responseSize)`
+  - `GeneratedEvent(String eventId, Instant timestamp, int configId, String policyId, String clientIp, String hostname, String path, String method, int statusCode, String userAgent, GeneratedRule rule, String action, GeneratedGeoLocation geoLocation, long requestSize, long responseSize)` — field names/order mirror `contracts.RawEventMessage` (enums as Strings on the wire).
   - `GeneratedRule(String id, String name, String message, String severity, String category)`
   - `GeneratedGeoLocation(String country, String city)`
-  - `SecurityEventGenerator` with `GeneratedEvent generateNormalEvent(int sequenceNumber, java.util.Random random)` and `GeneratedEvent generateWaveEvent(int sequenceNumber, String clientIp, String path, Instant timestamp, java.util.Random random)`.
+  - `SecurityEventGenerator` with `generateNormalEvent(int sequenceNumber, java.util.Random random)` and `generateWaveEvent(int sequenceNumber, String clientIp, String path, Instant timestamp, java.util.Random random)`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -306,30 +310,25 @@ class SecurityEventGeneratorTest {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
-
-Run: `mvn -q -pl services/event-generator test -Dtest=SecurityEventGeneratorTest`
-Expected: FAIL — types do not exist.
+- [ ] **Step 2: Run test to verify it fails** — `mvn -q -pl services/event-generator test -Dtest=SecurityEventGeneratorTest` → FAIL.
 
 - [ ] **Step 3: Write the event model records**
 
-`services/event-generator/src/main/java/com/akamai/wsa/generator/model/GeneratedRule.java`
+`.../model/GeneratedRule.java`
 ```java
 package com.akamai.wsa.generator.model;
 
 public record GeneratedRule(String id, String name, String message, String severity, String category) {
 }
 ```
-
-`services/event-generator/src/main/java/com/akamai/wsa/generator/model/GeneratedGeoLocation.java`
+`.../model/GeneratedGeoLocation.java`
 ```java
 package com.akamai.wsa.generator.model;
 
 public record GeneratedGeoLocation(String country, String city) {
 }
 ```
-
-`services/event-generator/src/main/java/com/akamai/wsa/generator/model/GeneratedEvent.java`
+`.../model/GeneratedEvent.java`
 ```java
 package com.akamai.wsa.generator.model;
 
@@ -357,7 +356,7 @@ public record GeneratedEvent(
 
 - [ ] **Step 4: Write the generator**
 
-`services/event-generator/src/main/java/com/akamai/wsa/generator/generate/SecurityEventGenerator.java`
+`.../generate/SecurityEventGenerator.java`
 ```java
 package com.akamai.wsa.generator.generate;
 
@@ -387,7 +386,7 @@ public class SecurityEventGenerator {
             "/wp-admin", "/api/v1/orders", "/static/app.js", "/api/v1/payments");
     private static final List<String> HOSTNAMES = List.of("www.example.com", "api.example.com", "shop.example.com");
     private static final List<String> COUNTRIES = List.of("CN", "RU", "US", "BR", "IN", "DE");
-    private static final List<int[]> CONFIG_IDS = List.of(new int[]{14227}, new int[]{20351}, new int[]{88120});
+    private static final List<Integer> CONFIG_IDS = List.of(14227, 20351, 88120);
     private static final String USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64)";
 
     private final Instant baseTimestamp;
@@ -418,7 +417,7 @@ public class SecurityEventGenerator {
         String category = CATEGORIES.get(random.nextInt(CATEGORIES.size()));
         String severity = SEVERITIES.get(random.nextInt(SEVERITIES.size()));
         String action = ACTIONS.get(random.nextInt(ACTIONS.size()));
-        int configId = CONFIG_IDS.get(random.nextInt(CONFIG_IDS.size()))[0];
+        int configId = CONFIG_IDS.get(random.nextInt(CONFIG_IDS.size()));
         return new GeneratedEvent(
                 "evt-" + String.format("%08d", sequenceNumber),
                 timestamp,
@@ -444,35 +443,25 @@ public class SecurityEventGenerator {
 }
 ```
 
-- [ ] **Step 5: Run tests to verify they pass**
+- [ ] **Step 5: Run tests to verify they pass** — `mvn -q -pl services/event-generator test -Dtest=SecurityEventGeneratorTest` → PASS.
 
-Run: `mvn -q -pl services/event-generator test -Dtest=SecurityEventGeneratorTest`
-Expected: PASS (determinism + schema validity).
-
-- [ ] **Step 6: Commit**
-
-```bash
-git add services/event-generator/src/main/java/com/akamai/wsa/generator/model \
-        services/event-generator/src/main/java/com/akamai/wsa/generator/generate/SecurityEventGenerator.java \
-        services/event-generator/src/test/java/com/akamai/wsa/generator/generate/SecurityEventGeneratorTest.java
-git commit -m "feat: add seed-deterministic security event generator"
-```
+- [ ] **Step 6: Commit** — `git commit -m "feat: add seed-deterministic security event generator"`
 
 ---
 
 ### Task 3: Dataset assembly with attack waves
 
 **Files:**
-- Create: `services/event-generator/src/main/java/com/akamai/wsa/generator/generate/DatasetGenerator.java`
-- Test: `services/event-generator/src/test/java/com/akamai/wsa/generator/generate/DatasetGeneratorTest.java`
+- Create: `.../generate/DatasetGenerator.java`
+- Test: `.../generate/DatasetGeneratorTest.java`
 
 **Interfaces:**
 - Consumes: `SecurityEventGenerator`, `GeneratorProperties`.
-- Produces: `DatasetGenerator` with `List<GeneratedEvent> generate()` — produces exactly `totalEvents` events, of which `waveCount` waves of `waveSize` events each share one clientIp + one path within a 2-minute span.
+- Produces: `DatasetGenerator` with `List<GeneratedEvent> generate()` — exactly `totalEvents` events, of which `waveCount` waves of `waveSize` share one clientIp + one path within a 2-minute span.
 
 - [ ] **Step 1: Write the failing test**
 
-`services/event-generator/src/test/java/com/akamai/wsa/generator/generate/DatasetGeneratorTest.java`
+`.../generate/DatasetGeneratorTest.java`
 ```java
 package com.akamai.wsa.generator.generate;
 
@@ -483,7 +472,6 @@ import org.junit.jupiter.api.Test;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
-import java.util.Map;
 import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -534,14 +522,9 @@ class DatasetGeneratorTest {
 ```
 (Add a `withSeed` copy helper to `GeneratorProperties` in Step 3.)
 
-- [ ] **Step 2: Run test to verify it fails**
-
-Run: `mvn -q -pl services/event-generator test -Dtest=DatasetGeneratorTest`
-Expected: FAIL — `DatasetGenerator` / `withSeed` do not exist.
+- [ ] **Step 2: Run test to verify it fails** — `mvn -q -pl services/event-generator test -Dtest=DatasetGeneratorTest` → FAIL.
 
 - [ ] **Step 3: Add `withSeed` to `GeneratorProperties`**
-
-Add this method inside the `GeneratorProperties` record body:
 ```java
     public GeneratorProperties withSeed(long newSeed) {
         return new GeneratorProperties(newSeed, totalEvents, waveCount, waveSize, baseTimestamp,
@@ -551,7 +534,7 @@ Add this method inside the `GeneratorProperties` record body:
 
 - [ ] **Step 4: Write `DatasetGenerator`**
 
-`services/event-generator/src/main/java/com/akamai/wsa/generator/generate/DatasetGenerator.java`
+`.../generate/DatasetGenerator.java`
 ```java
 package com.akamai.wsa.generator.generate;
 
@@ -614,35 +597,31 @@ public class DatasetGenerator {
 }
 ```
 
-- [ ] **Step 5: Run tests to verify they pass**
+- [ ] **Step 5: Run tests to verify they pass** — PASS (exact total, determinism, repeat-offender burst present).
 
-Run: `mvn -q -pl services/event-generator test -Dtest=DatasetGeneratorTest`
-Expected: PASS (exact total, determinism, repeat-offender burst present).
-
-- [ ] **Step 6: Commit**
-
-```bash
-git add services/event-generator/src/main/java/com/akamai/wsa/generator/GeneratorProperties.java \
-        services/event-generator/src/main/java/com/akamai/wsa/generator/generate/DatasetGenerator.java \
-        services/event-generator/src/test/java/com/akamai/wsa/generator/generate/DatasetGeneratorTest.java
-git commit -m "feat: assemble dataset with attack waves"
-```
+- [ ] **Step 6: Commit** — `git commit -m "feat: assemble dataset with attack waves"`
 
 ---
 
 ### Task 4: JSON output writer
 
 **Files:**
-- Create: `services/event-generator/src/main/java/com/akamai/wsa/generator/output/JsonEventWriter.java`
-- Test: `services/event-generator/src/test/java/com/akamai/wsa/generator/output/JsonEventWriterTest.java`
+- Create: `.../output/JsonEventWriter.java`
+- Test: `.../output/JsonEventWriterTest.java`
 
 **Interfaces:**
-- Consumes: `com.fasterxml.jackson.databind.ObjectMapper`.
-- Produces: `JsonEventWriter` with `String toJsonArray(List<GeneratedEvent> events)` — serializes to the ingest request array shape (ISO-8601 timestamps, nested rule/geoLocation).
+- Produces: `JsonEventWriter` with `String toJsonArray(List<GeneratedEvent> events)` — serializes to the gateway's ingest request array shape (ISO-8601 timestamps, nested rule/geoLocation).
+
+> **Contract-alignment note:** `GeneratedEvent`'s field names/order intentionally
+> mirror `contracts.RawEventMessage` and the gateway's `IngestEventRequest`, so the
+> serialized JSON is accepted as-is. If you prefer zero drift risk, add the
+> `contracts` dependency and map `GeneratedEvent` → `contracts.RawEventMessage`
+> before serializing. Either way, any `contracts` change (see its CHANGELOG) means
+> re-checking this shape.
 
 - [ ] **Step 1: Write the failing test**
 
-`services/event-generator/src/test/java/com/akamai/wsa/generator/output/JsonEventWriterTest.java`
+`.../output/JsonEventWriterTest.java`
 ```java
 package com.akamai.wsa.generator.output;
 
@@ -684,14 +663,11 @@ class JsonEventWriterTest {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
-
-Run: `mvn -q -pl services/event-generator test -Dtest=JsonEventWriterTest`
-Expected: FAIL — `JsonEventWriter` does not exist.
+- [ ] **Step 2: Run test to verify it fails** → FAIL.
 
 - [ ] **Step 3: Write `JsonEventWriter`**
 
-`services/event-generator/src/main/java/com/akamai/wsa/generator/output/JsonEventWriter.java`
+`.../output/JsonEventWriter.java`
 ```java
 package com.akamai.wsa.generator.output;
 
@@ -720,43 +696,30 @@ public class JsonEventWriter {
     }
 }
 ```
-(Spring Boot auto-registers a `JavaTimeModule`-configured `ObjectMapper` bean, so the injected mapper emits ISO-8601 timestamps.)
+(Spring Boot auto-registers a `JavaTimeModule`-configured `ObjectMapper`, so the injected mapper emits ISO-8601 timestamps.)
 
-- [ ] **Step 4: Run test to verify it passes**
+- [ ] **Step 4: Run test to verify it passes** → PASS.
 
-Run: `mvn -q -pl services/event-generator test -Dtest=JsonEventWriterTest`
-Expected: PASS.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add services/event-generator/src/main/java/com/akamai/wsa/generator/output/JsonEventWriter.java \
-        services/event-generator/src/test/java/com/akamai/wsa/generator/output/JsonEventWriterTest.java
-git commit -m "feat: serialize generated events to ingestible json"
-```
+- [ ] **Step 5: Commit** — `git commit -m "feat: serialize generated events to ingestible json"`
 
 ---
 
-### Task 5: Batched HTTP feeder + CLI runner (+ tag)
+### Task 5: Batched HTTP feeder (201/400-aware) + CLI runner (+ tag)
 
 **Files:**
-- Create: `services/event-generator/src/main/java/com/akamai/wsa/generator/feed/IngestionClient.java`
-- Create: `services/event-generator/src/main/java/com/akamai/wsa/generator/feed/RestClientIngestionClient.java`
-- Create: `services/event-generator/src/main/java/com/akamai/wsa/generator/feed/IngestionFeeder.java`
-- Create: `services/event-generator/src/main/java/com/akamai/wsa/generator/GeneratorRunner.java`
-- Test: `services/event-generator/src/test/java/com/akamai/wsa/generator/feed/IngestionFeederTest.java`
+- Create: `.../feed/IngestionClient.java`, `RestClientIngestionClient.java`, `IngestionFeeder.java`
+- Create: `.../GeneratorRunner.java`
+- Test: `.../feed/IngestionFeederTest.java`, `.../feed/RestClientIngestionClientTest.java`
 
 **Interfaces:**
-- Consumes: `DatasetGenerator`, `JsonEventWriter`, `GeneratorProperties`.
-- Produces:
-  - `interface IngestionClient { int postBatch(List<GeneratedEvent> batch); }` (returns accepted count)
-  - `RestClientIngestionClient implements IngestionClient` (posts to `targetUrl`)
-  - `IngestionFeeder` with `int feed(List<GeneratedEvent> events, int batchSize)` — splits into batches, sums accepted counts
-  - `GeneratorRunner implements CommandLineRunner` — dispatches on `OutputMode`
+- `interface IngestionClient { int postBatch(List<GeneratedEvent> batch); }` (returns accepted count; a rejected batch returns 0, never throws)
+- `RestClientIngestionClient implements IngestionClient` — POSTs to `targetUrl`, parses `201 {acceptedCount}`, and **catches `400`** (all-or-nothing batch rejection) by logging and returning 0.
+- `IngestionFeeder` with `int feed(List<GeneratedEvent> events, int batchSize)` — splits into batches, sums accepted counts.
+- `GeneratorRunner implements CommandLineRunner` — dispatches on `OutputMode`.
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **Step 1: Write the failing feeder test**
 
-`services/event-generator/src/test/java/com/akamai/wsa/generator/feed/IngestionFeederTest.java`
+`.../feed/IngestionFeederTest.java`
 ```java
 package com.akamai.wsa.generator.feed;
 
@@ -782,6 +745,23 @@ class IngestionFeederTest {
         assertThat(accepted).isEqualTo(250);
     }
 
+    @Test
+    void continuesWhenABatchIsRejected() {
+        // a client that rejects (returns 0) must not abort the run; remaining batches still post
+        IngestionClient rejectingThenAccepting = new IngestionClient() {
+            private int call = 0;
+            @Override
+            public int postBatch(List<GeneratedEvent> batch) {
+                return (call++ == 0) ? 0 : batch.size();
+            }
+        };
+        IngestionFeeder feeder = new IngestionFeeder(rejectingThenAccepting);
+
+        int accepted = feeder.feed(eventList(250), 100);
+
+        assertThat(accepted).isEqualTo(150); // first batch rejected (0), next two accepted (100+50)
+    }
+
     private List<GeneratedEvent> eventList(int count) {
         List<GeneratedEvent> events = new ArrayList<>();
         for (int sequenceNumber = 0; sequenceNumber < count; sequenceNumber++) {
@@ -803,14 +783,11 @@ class IngestionFeederTest {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
-
-Run: `mvn -q -pl services/event-generator test -Dtest=IngestionFeederTest`
-Expected: FAIL — `IngestionClient` / `IngestionFeeder` do not exist.
+- [ ] **Step 2: Run test to verify it fails** → FAIL (`IngestionClient`/`IngestionFeeder` missing).
 
 - [ ] **Step 3: Write the client port**
 
-`services/event-generator/src/main/java/com/akamai/wsa/generator/feed/IngestionClient.java`
+`.../feed/IngestionClient.java`
 ```java
 package com.akamai.wsa.generator.feed;
 
@@ -820,13 +797,14 @@ import java.util.List;
 
 public interface IngestionClient {
 
+    /** POSTs a batch; returns the accepted count (0 if the batch was rejected). Never throws on a 4xx. */
     int postBatch(List<GeneratedEvent> batch);
 }
 ```
 
 - [ ] **Step 4: Write the feeder**
 
-`services/event-generator/src/main/java/com/akamai/wsa/generator/feed/IngestionFeeder.java`
+`.../feed/IngestionFeeder.java`
 ```java
 package com.akamai.wsa.generator.feed;
 
@@ -855,50 +833,128 @@ public class IngestionFeeder {
 }
 ```
 
-- [ ] **Step 5: Run test to verify it passes**
+- [ ] **Step 5: Run test to verify it passes** → PASS (batching + reject-and-continue).
 
-Run: `mvn -q -pl services/event-generator test -Dtest=IngestionFeederTest`
-Expected: PASS.
+- [ ] **Step 6: Write the real HTTP client (201-parse + 400-catch), TDD**
 
-- [ ] **Step 6: Write the real HTTP client**
-
-`services/event-generator/src/main/java/com/akamai/wsa/generator/feed/RestClientIngestionClient.java`
+Failing test `.../feed/RestClientIngestionClientTest.java`:
 ```java
 package com.akamai.wsa.generator.feed;
 
 import com.akamai.wsa.generator.GeneratorProperties;
 import com.akamai.wsa.generator.model.GeneratedEvent;
+import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.test.web.client.MockRestServiceServer;
+import org.springframework.web.client.RestClient;
+
+import java.time.Instant;
+import java.util.List;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
+
+class RestClientIngestionClientTest {
+
+    private static final String URL = "http://localhost:8081/v1/events/ingest";
+
+    private GeneratorProperties props() {
+        return new GeneratorProperties(1L, 1, 0, 0, Instant.parse("2026-05-20T14:00:00Z"),
+                URL, 500, GeneratorProperties.OutputMode.HTTP, "out.json");
+    }
+
+    private GeneratedEvent anEvent() {
+        return new GeneratedEvent("evt-1", Instant.parse("2026-05-20T14:00:00Z"), 14227, "pol",
+                "1.1.1.1", "h", "/p", "GET", 200, "ua", null, "DENY", null, 1, 1);
+    }
+
+    @Test
+    void parsesAcceptedCountFrom201() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo(URL))
+                .andRespond(withStatus(HttpStatus.CREATED)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .body("{\"acceptedCount\":3}"));
+
+        int accepted = new RestClientIngestionClient(builder, props()).postBatch(List.of(anEvent()));
+
+        assertThat(accepted).isEqualTo(3);
+        server.verify();
+    }
+
+    @Test
+    void returnsZeroAndDoesNotThrowOn400() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo(URL))
+                .andRespond(withStatus(HttpStatus.BAD_REQUEST)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .body("{\"error\":{\"code\":\"VALIDATION\",\"message\":\"bad batch\"}}"));
+
+        int accepted = new RestClientIngestionClient(builder, props()).postBatch(List.of(anEvent()));
+
+        assertThat(accepted).isZero();
+        server.verify();
+    }
+}
+```
+Implementation `.../feed/RestClientIngestionClient.java`:
+```java
+package com.akamai.wsa.generator.feed;
+
+import com.akamai.wsa.generator.GeneratorProperties;
+import com.akamai.wsa.generator.model.GeneratedEvent;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientResponseException;
 
 import java.util.List;
 
 @Component
 public class RestClientIngestionClient implements IngestionClient {
 
+    private static final Logger logger = LoggerFactory.getLogger(RestClientIngestionClient.class);
+
     private final RestClient restClient;
     private final String targetUrl;
 
-    public RestClientIngestionClient(GeneratorProperties properties) {
-        this.restClient = RestClient.create();
+    public RestClientIngestionClient(RestClient.Builder restClientBuilder, GeneratorProperties properties) {
+        this.restClient = restClientBuilder.build();
         this.targetUrl = properties.targetUrl();
+    }
+
+    public record IngestAcceptedResponse(int acceptedCount) {
     }
 
     @Override
     public int postBatch(List<GeneratedEvent> batch) {
-        restClient.post()
-                .uri(targetUrl)
-                .body(batch)
-                .retrieve()
-                .toBodilessEntity();
-        return batch.size();
+        try {
+            IngestAcceptedResponse response = restClient.post()
+                    .uri(targetUrl)
+                    .body(batch)
+                    .retrieve()
+                    .body(IngestAcceptedResponse.class);
+            return response == null ? 0 : response.acceptedCount();
+        } catch (RestClientResponseException rejection) {
+            // Gateway is all-or-nothing per batch: one invalid event -> 400 for the whole batch.
+            // Log and continue rather than aborting the run.
+            logger.warn("RestClientIngestionClient - batch rejected (size={}, status={})",
+                    batch.size(), rejection.getStatusCode());
+            return 0;
+        }
     }
 }
 ```
 
 - [ ] **Step 7: Write the CLI runner**
 
-`services/event-generator/src/main/java/com/akamai/wsa/generator/GeneratorRunner.java`
+`.../GeneratorRunner.java`
 ```java
 package com.akamai.wsa.generator;
 
@@ -942,42 +998,39 @@ public class GeneratorRunner implements CommandLineRunner {
             case JSON_FILE -> Files.writeString(Path.of(properties.outputFile()), jsonEventWriter.toJsonArray(events));
             case HTTP -> {
                 int accepted = ingestionFeeder.feed(events, properties.batchSize());
-                logger.info("GeneratorRunner - fed events to ingest API, accepted={}", accepted);
+                logger.info("GeneratorRunner - fed events to gateway, accepted={} of {}", accepted, events.size());
             }
         }
     }
 }
 ```
 
-- [ ] **Step 8: Full build, then run against a live mini-wsa (manual dry run)**
+- [ ] **Step 8: Full build, then a manual dry run against the gateway**
 
-Run: `mvn -q clean verify`
-Expected: BUILD SUCCESS, all generator tests green.
+Run: `mvn -q clean verify` → BUILD SUCCESS, all generator tests green.
 
-Manual end-to-end (optional): start mini-wsa on 8081, then
+Manual end-to-end (optional): start the **gateway** on 8081 (for a full-pipeline run also bring up enrichment + event-store + Kafka via `docker compose up`), then
 `mvn -q -pl services/event-generator spring-boot:run -Dspring-boot.run.arguments="--generator.output-mode=HTTP --generator.total-events=1000"`
-Expected log: `accepted=1000`.
+Expected log: `accepted=1000 of 1000` (gateway accepted for processing; persistence is verified downstream via event-store/analytics).
 
 - [ ] **Step 9: Commit and tag**
 
 ```bash
 git add services/event-generator/src/main/java/com/akamai/wsa/generator/feed \
         services/event-generator/src/main/java/com/akamai/wsa/generator/GeneratorRunner.java \
-        services/event-generator/src/test/java/com/akamai/wsa/generator/feed/IngestionFeederTest.java
-git commit -m "feat: add batched http feeder and cli runner"
-git tag v0.5-generator
+        services/event-generator/src/test/java/com/akamai/wsa/generator/feed
+git commit -m "feat: add 201/400-aware http feeder and cli runner"
+git tag v0.6-generator
 ```
 
 ---
 
 ## Self-Review
 
-**Spec coverage:** realistic randomized events ✓ (Task 2); attack waves (same IP+path burst) ✓ (Task 3); configurable count/waves/seed/batch ✓ (Task 1 props); output as JSON file/stdout ✓ (Task 4) and POST to ingest API ✓ (Task 5); feedable shape matches DLR schema ✓ (Task 4 asserts field names + ISO timestamp).
+**Spec coverage:** realistic randomized events ✓ (Task 2); attack waves (same IP+path burst, >5-in-10-min) ✓ (Task 3); configurable count/waves/seed/batch ✓ (Task 1); JSON file/stdout output ✓ (Task 4); batched POST to the gateway with accurate `acceptedCount` and reject-and-continue ✓ (Task 5); feedable shape mirrors `contracts.RawEventMessage` / gateway `IngestEventRequest` ✓ (Task 4).
 
-**Placeholder scan:** none — every step has concrete code and commands.
+**v2 reconciliation fixes applied:** root-pom snippet now appends to the six-module reactor (Task 1 Step 3); all "mini-wsa on 8081" → "gateway on 8081" with a full-pipeline note; feeder parses `201 {acceptedCount}` and **catches `400`** to avoid aborting the run (Task 5); milestone tag `v0.6-generator`.
 
-**Type consistency:** `GeneratedEvent` component order/names identical across model, generator, writer, feeder, and tests; `GeneratorProperties` accessors (`seed()`, `totalEvents()`, `waveCount()`, `waveSize()`, `baseTimestamp()`, `targetUrl()`, `batchSize()`, `outputMode()`, `outputFile()`) used consistently; `IngestionClient.postBatch(List<GeneratedEvent>)` matches feeder + fake + REST impl.
+**Placeholder scan:** none. **Type consistency:** `GeneratedEvent` component order/names identical across model, generator, writer, feeder, tests; `IngestionClient.postBatch(List<GeneratedEvent>)` matches feeder + fakes + REST impl; `RestClientIngestionClient` constructor takes `(RestClient.Builder, GeneratorProperties)` for testability.
 
-**Notes for the parent:**
-- The generated JSON must stay in lockstep with Part 1's ingest request DTO. If Part 1 names a field differently (e.g. wraps single vs array), reconcile there — this plan targets the assignment's documented DLR shape and posts an array (batch), which Part 1 must accept.
-- `RestClientIngestionClient` treats a 2xx as "all accepted" (returns batch size). If Part 1's response returns an explicit accepted count / per-item report, refine `postBatch` to parse it.
+**Open notes:** direct-Kafka producer output mode is a deferred future add (SDD §2). Optionally inject a small fraction of invalid events (config flag) to exercise the gateway's 400 path as negative-test data.
