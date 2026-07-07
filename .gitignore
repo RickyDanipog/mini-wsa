@@ -16,6 +16,9 @@ out/
 # --- OS ---
 .DS_Store
 
+# --- Obsidian editor config ---
+.obsidian/
+
 # --- Env / secrets ---
 *.env
 .env.local
