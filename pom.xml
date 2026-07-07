@@ -25,6 +25,10 @@
 
     <modules>
         <module>services/contracts</module>
+        <module>services/gateway</module>
+        <module>services/enrichment</module>
+        <module>services/event-store</module>
+        <module>services/analytics</module>
         <module>services/mini-wsa</module>
     </modules>
 </project>
