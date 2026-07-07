@@ -32,5 +32,8 @@ out/
 # --- Personal, local-only notes (never pushed) ---
 *.local.md
 
+# --- Completed-task review trail (local only) ---
+/archives/
+
 # --- Source assignment PDF: kept locally, never published (repo will go public) ---
 Assignment(1).pdf

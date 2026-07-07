@@ -56,6 +56,23 @@ Enums serialize to their **names** (matches the assignment's `"INJECTION"`, `"DE
 
 Serialization: **JSON** for now (Avro + Schema Registry is a hardening step). Producers and consumers of the same topic must use a matching (de)serializer for the enveloped generic type.
 
+## Shared Mongo collection (event-store writes → analytics reads)
+
+When `wsa.storage=mongo`, event-store persists to and analytics reads from the SAME collection (locally one Mongo instance; a read replica in production). This document shape is a cross-service contract — same rule as the Kafka schemas: change it here + log in `CHANGELOG.md`, and both services must be re-checked.
+
+- **Database:** `wsa` · **Collection:** `events`
+- **Document fields** (flat where possible; `_id` = `eventId` for idempotent upsert):
+  - `_id` (String, = eventId), `eventId` (String), `timestamp` (ISODate), `configId` (int),
+    `policyId` (String), `clientIp` (String), `hostname` (String), `path` (String),
+    `method` (String), `statusCode` (int), `userAgent` (String),
+    `rule` { `id`, `name`, `message`, `severity` (enum name), `category` (enum name) },
+    `action` (enum name), `geoLocation` { `country`, `city` },
+    `requestSize` (long), `responseSize` (long),
+    `attackType` (String display name), `threatScore` (int), `receivedAt` (ISODate)
+- **Indexes** (event-store owns creation): `{ configId: 1, timestamp: -1 }`, `{ clientIp: 1, timestamp: -1 }`, `{ timestamp: -1 }`.
+- **Ownership:** event-store is the sole writer (idempotent upsert by `_id`); analytics is READ-ONLY on this collection.
+- Each service maps this shape with its own `@Document` class (no shared Spring-Data type in `contracts`, which stays a plain jar) — but the collection name, field names, and enum-name encoding MUST match exactly.
+
 ## The change-notification rule
 Contracts are shared context across all service agents. When you change any type
 above: (1) update this file, (2) append an entry to `CHANGELOG.md` with the date,

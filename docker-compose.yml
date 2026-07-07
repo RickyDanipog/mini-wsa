@@ -1,5 +1,6 @@
-# Mini WSA — v2 pipeline. Kafka is the transport; stores are in-memory for now
-# (Mongo/Redis are added in the DB-candidate phase). Bring up: docker compose up --build
+# Mini WSA — v2 pipeline. Kafka is the transport; event-store persists to Mongo
+# and analytics reads the same Mongo collection (wsa.storage=mongo). Enrichment's
+# offender window stays in-memory (Redis is a later step). Bring up: docker compose up --build
 services:
   kafka:
     image: apache/kafka:3.7.1
@@ -19,6 +20,18 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+
+  mongo:
+    image: mongo:7
+    container_name: wsa-mongo
+    ports:
+      - "27017:27017"
+
+  redis:
+    image: redis:7
+    container_name: wsa-redis
+    ports:
+      - "6379:6379"
 
   gateway:
     build:
@@ -40,9 +53,11 @@ services:
       args:
         MODULE: enrichment
     container_name: wsa-enrichment
-    depends_on: [kafka]
+    depends_on: [kafka, redis]
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      WSA_STORAGE: redis
+      SPRING_DATA_REDIS_HOST: redis
     ports:
       - "8082:8082"
 
@@ -53,9 +68,11 @@ services:
       args:
         MODULE: event-store
     container_name: wsa-event-store
-    depends_on: [kafka]
+    depends_on: [kafka, mongo]
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      WSA_STORAGE: mongo
+      SPRING_DATA_MONGODB_URI: mongodb://mongo:27017/wsa
     ports:
       - "8083:8083"
 
@@ -66,5 +83,9 @@ services:
       args:
         MODULE: analytics
     container_name: wsa-analytics
+    depends_on: [mongo]
+    environment:
+      WSA_STORAGE: mongo
+      SPRING_DATA_MONGODB_URI: mongodb://mongo:27017/wsa
     ports:
       - "8084:8084"

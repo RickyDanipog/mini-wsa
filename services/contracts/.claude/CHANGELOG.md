@@ -8,6 +8,12 @@ Format: `## YYYY-MM-DD — <summary>` · what changed · affected services · re
 
 ---
 
+## 2026-07-07 — Shared Mongo `events` collection schema added
+
+Added the `events` collection schema (DB `wsa`) as a cross-service contract for the Mongo storage phase: event-store is the sole writer (idempotent upsert by `_id`=eventId), analytics reads it read-only. Flat document + nested `rule`/`geoLocation`, enum-name encoding, indexes `{configId,timestamp}` / `{clientIp,timestamp}` / `{timestamp}`. See context.md "Shared Mongo collection".
+
+**Affected services:** event-store (MongoEventStore writer), analytics (MongoAnalyticsReadStore reader). Both gated on `wsa.storage=mongo`.
+
 ## 2026-07-07 — Initial contracts (v1)
 
 Established the shared message API (schema version 1):
