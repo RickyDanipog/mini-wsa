@@ -8,6 +8,12 @@ Format: `## YYYY-MM-DD — <summary>` · what changed · affected services · re
 
 ---
 
+## 2026-07-07 — Shared Postgres `events` table schema added
+
+Added the relational `events` table (DB `wsa`) as a cross-service contract for the Postgres storage-candidate phase, mirroring the Mongo `events` collection: event-store is the sole writer (`INSERT ... ON CONFLICT (event_id) DO NOTHING`, first-write-wins), analytics reads it read-only. Flat columns (rule/geo flattened to `rule_*` / `geo_*`), VARCHAR enum-name encoding, `TIMESTAMPTZ` for `Instant` (bind/read as `OffsetDateTime` UTC), indexes `(config_id,timestamp)` / `(client_ip,timestamp)` / `(timestamp)`. See context.md "Shared Postgres `events` table".
+
+**Affected services:** event-store (PostgresEventStore writer), analytics (PostgresAnalyticsReadStore reader). Both gated on `wsa.storage=postgres`; JDBC auto-config gated by a `PostgresStorageAutoConfigurationFilter` so non-postgres modes open no DataSource.
+
 ## 2026-07-07 — Shared Mongo `events` collection schema added
 
 Added the `events` collection schema (DB `wsa`) as a cross-service contract for the Mongo storage phase: event-store is the sole writer (idempotent upsert by `_id`=eventId), analytics reads it read-only. Flat document + nested `rule`/`geoLocation`, enum-name encoding, indexes `{configId,timestamp}` / `{clientIp,timestamp}` / `{timestamp}`. See context.md "Shared Mongo collection".

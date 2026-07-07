@@ -1,6 +1,8 @@
-# Mini WSA — v2 pipeline. Kafka is the transport; event-store persists to Mongo
-# and analytics reads the same Mongo collection (wsa.storage=mongo). Enrichment's
-# offender window stays in-memory (Redis is a later step). Bring up: docker compose up --build
+# Mini WSA — v2 pipeline. Kafka is the transport. By default enrichment uses Redis
+# (wsa.storage=redis) and event-store + analytics share Mongo (wsa.storage=mongo).
+# Postgres is provided as an alternate event-store/analytics backend for the
+# storage benchmark — point those services at it with WSA_STORAGE=postgres +
+# SPRING_DATASOURCE_URL. Bring up: docker compose up --build
 services:
   kafka:
     image: apache/kafka:3.7.1
@@ -32,6 +34,16 @@ services:
     container_name: wsa-redis
     ports:
       - "6379:6379"
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: wsa-postgres
+    environment:
+      POSTGRES_DB: wsa
+      POSTGRES_USER: wsa
+      POSTGRES_PASSWORD: wsa
+    ports:
+      - "5432:5432"
 
   gateway:
     build:

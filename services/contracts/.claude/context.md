@@ -73,6 +73,45 @@ When `wsa.storage=mongo`, event-store persists to and analytics reads from the S
 - **Ownership:** event-store is the sole writer (idempotent upsert by `_id`); analytics is READ-ONLY on this collection.
 - Each service maps this shape with its own `@Document` class (no shared Spring-Data type in `contracts`, which stays a plain jar) — but the collection name, field names, and enum-name encoding MUST match exactly.
 
+## Shared Postgres `events` table (event-store writes → analytics reads)
+
+When `wsa.storage=postgres`, event-store writes to and analytics reads from the SAME `events` table (locally one Postgres instance; a read replica in production). This is the relational mirror of the Mongo `events` collection — same cross-service contract rule: change it here + log in `CHANGELOG.md`, and both services must be re-checked. Enums are stored as their `name()` strings (matches the Mongo/JSON encoding). `Instant` values map to `TIMESTAMPTZ` (bind/read as `OffsetDateTime` at UTC to avoid timezone drift).
+
+- **Database:** `wsa` · **Table:** `events` · nested `rule`/`geoLocation` are flattened to columns.
+- **DDL (event-store owns creation — `CREATE TABLE/INDEX IF NOT EXISTS`, analytics never creates):**
+```sql
+CREATE TABLE IF NOT EXISTS events (
+    event_id      VARCHAR(128) PRIMARY KEY,
+    timestamp     TIMESTAMPTZ  NOT NULL,
+    config_id     INTEGER      NOT NULL,
+    policy_id     VARCHAR(128),
+    client_ip     VARCHAR(64)  NOT NULL,
+    hostname      VARCHAR(255),
+    path          VARCHAR(2048),
+    method        VARCHAR(16),
+    status_code   INTEGER,
+    user_agent    TEXT,
+    rule_id       VARCHAR(128),
+    rule_name     VARCHAR(255),
+    rule_message  TEXT,
+    severity      VARCHAR(16),
+    category      VARCHAR(32),
+    action        VARCHAR(16)  NOT NULL,
+    geo_country   VARCHAR(64),
+    geo_city      VARCHAR(128),
+    request_size  BIGINT,
+    response_size BIGINT,
+    attack_type   VARCHAR(128),
+    threat_score  INTEGER      NOT NULL,
+    received_at   TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_events_config_ts   ON events (config_id, timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_events_clientip_ts ON events (client_ip, timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_events_ts          ON events (timestamp DESC);
+```
+- **Idempotent write** (matches in-memory `putIfAbsent` / first-write-wins): `INSERT ... ON CONFLICT (event_id) DO NOTHING`.
+- **Ownership:** event-store is the sole writer; analytics is READ-ONLY. Column names, VARCHAR-name enum encoding, and the `event_id` key MUST match exactly across both services.
+
 ## The change-notification rule
 Contracts are shared context across all service agents. When you change any type
 above: (1) update this file, (2) append an entry to `CHANGELOG.md` with the date,
