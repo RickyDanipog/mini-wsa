@@ -24,6 +24,7 @@
     </properties>
 
     <modules>
+        <module>services/contracts</module>
         <module>services/mini-wsa</module>
     </modules>
 </project>
