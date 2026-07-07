@@ -2,68 +2,112 @@ package com.akamai.wsa.gateway.interfaces.rest;
 
 import com.akamai.wsa.contracts.MessageEnvelope;
 import com.akamai.wsa.contracts.RawEventMessage;
+import com.akamai.wsa.gateway.application.EventRequestMapper;
 import com.akamai.wsa.gateway.infrastructure.messaging.RawEventPublisher;
+import com.akamai.wsa.gateway.interfaces.rest.dto.IngestEventRequest;
+import com.akamai.wsa.gateway.interfaces.rest.error.BatchValidationException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.validation.ConstraintViolation;
+import jakarta.validation.Validator;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 /**
- * Write-path entry point. Accepts a single event or an array, wraps each in an
- * envelope, and publishes to {@code events.raw}. (Thin skeleton: full Bean
- * Validation + structured 400 details arrive with the gateway service plan.)
+ * Write-path entry point. Accepts a single event or an array, validates the
+ * batch all-or-nothing, maps each valid event to the {@link RawEventMessage}
+ * contract and publishes it (enveloped, correlation-tagged) to {@code events.raw}.
+ * Stores nothing.
  */
 @RestController
 @RequestMapping("/v1/events")
 class IngestController {
 
+    private static final Logger logger = LoggerFactory.getLogger(IngestController.class);
     private static final String CORRELATION_ID_HEADER = "x-correlation-id";
 
-    private final RawEventPublisher rawEventPublisher;
     private final ObjectMapper objectMapper;
+    private final Validator validator;
+    private final EventRequestMapper eventRequestMapper;
+    private final RawEventPublisher rawEventPublisher;
     private final Clock clock;
 
-    IngestController(RawEventPublisher rawEventPublisher, ObjectMapper objectMapper, Clock clock) {
-        this.rawEventPublisher = rawEventPublisher;
+    IngestController(ObjectMapper objectMapper, Validator validator,
+                     EventRequestMapper eventRequestMapper,
+                     RawEventPublisher rawEventPublisher, Clock clock) {
         this.objectMapper = objectMapper;
+        this.validator = validator;
+        this.eventRequestMapper = eventRequestMapper;
+        this.rawEventPublisher = rawEventPublisher;
         this.clock = clock;
     }
 
     @PostMapping("/ingest")
-    ResponseEntity<Map<String, Object>> ingest(
+    @ResponseStatus(HttpStatus.CREATED)
+    IngestResponse ingest(
             @RequestBody JsonNode requestBody,
-            @RequestHeader(value = CORRELATION_ID_HEADER, required = false) String correlationIdHeader) throws Exception {
+            @RequestHeader(name = CORRELATION_ID_HEADER, required = false) String correlationIdHeader) {
 
-        List<JsonNode> eventNodes = new ArrayList<>();
-        if (requestBody.isArray()) {
-            requestBody.forEach(eventNodes::add);
-        } else {
-            eventNodes.add(requestBody);
+        List<IngestEventRequest> ingestEventRequests = readRequests(requestBody);
+        validateAllOrNothing(ingestEventRequests);
+
+        String correlationId = resolveCorrelationId(correlationIdHeader);
+        Instant occurredAt = Instant.now(clock);
+        for (IngestEventRequest ingestEventRequest : ingestEventRequests) {
+            RawEventMessage rawEventMessage = eventRequestMapper.toRawEventMessage(ingestEventRequest);
+            rawEventPublisher.publish(MessageEnvelope.of(correlationId, occurredAt, rawEventMessage));
         }
 
-        String correlationId = (correlationIdHeader == null || correlationIdHeader.isBlank())
+        logger.info("IngestController - ingest accepted={} correlationId={}",
+                ingestEventRequests.size(), correlationId);
+        return new IngestResponse(ingestEventRequests.size());
+    }
+
+    private List<IngestEventRequest> readRequests(JsonNode requestBody) {
+        try {
+            if (requestBody.isArray()) {
+                return objectMapper.convertValue(requestBody, objectMapper.getTypeFactory()
+                        .constructCollectionType(List.class, IngestEventRequest.class));
+            }
+            return List.of(objectMapper.convertValue(requestBody, IngestEventRequest.class));
+        } catch (IllegalArgumentException malformed) {
+            throw new MalformedRequestException(malformed.getMessage());
+        }
+    }
+
+    private void validateAllOrNothing(List<IngestEventRequest> ingestEventRequests) {
+        List<BatchValidationException.ItemViolation> violations = new ArrayList<>();
+        for (int index = 0; index < ingestEventRequests.size(); index++) {
+            Set<ConstraintViolation<IngestEventRequest>> constraintViolations =
+                    validator.validate(ingestEventRequests.get(index));
+            for (ConstraintViolation<IngestEventRequest> constraintViolation : constraintViolations) {
+                violations.add(new BatchValidationException.ItemViolation(
+                        "[" + index + "]." + constraintViolation.getPropertyPath(),
+                        constraintViolation.getMessage()));
+            }
+        }
+        if (!violations.isEmpty()) {
+            throw new BatchValidationException(violations);
+        }
+    }
+
+    private String resolveCorrelationId(String correlationIdHeader) {
+        return (correlationIdHeader == null || correlationIdHeader.isBlank())
                 ? UUID.randomUUID().toString()
                 : correlationIdHeader;
-        Instant occurredAt = Instant.now(clock);
-
-        for (JsonNode eventNode : eventNodes) {
-            RawEventMessage rawEvent = objectMapper.treeToValue(eventNode, RawEventMessage.class);
-            rawEventPublisher.publish(MessageEnvelope.of(correlationId, occurredAt, rawEvent));
-        }
-
-        return ResponseEntity.status(HttpStatus.CREATED)
-                .body(Map.of("acceptedCount", eventNodes.size()));
     }
 }
