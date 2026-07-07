@@ -1,0 +1,14 @@
+# Parameterized multi-stage build for any service module.
+# Usage (compose): build.args MODULE=<service-dir-name>
+FROM maven:3.9-eclipse-temurin-21 AS build
+ARG MODULE
+WORKDIR /build
+COPY pom.xml .
+COPY services ./services
+RUN mvn -q -pl services/${MODULE} -am clean package -DskipTests
+
+FROM eclipse-temurin:21-jre
+ARG MODULE
+WORKDIR /app
+COPY --from=build /build/services/${MODULE}/target/*.jar app.jar
+ENTRYPOINT ["java", "-jar", "app.jar"]

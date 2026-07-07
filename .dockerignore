@@ -2,3 +2,5 @@
 .idea/
 .git/
 *.iml
+**/.claude/
+docs/
