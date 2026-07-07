@@ -1,34 +1,38 @@
 package com.akamai.wsa.enrichment.interfaces.messaging;
 
-import com.akamai.wsa.contracts.AttackCategory;
 import com.akamai.wsa.contracts.EnrichedEventMessage;
 import com.akamai.wsa.contracts.MessageEnvelope;
 import com.akamai.wsa.contracts.RawEventMessage;
+import com.akamai.wsa.enrichment.application.EnrichmentService;
 import com.akamai.wsa.enrichment.infrastructure.messaging.EnrichedEventPublisher;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 
-import java.time.Clock;
-import java.time.Instant;
-
 /**
- * Consumes raw events, produces enriched events. THIN skeleton: attackType is
- * the display-name mapping and threatScore is a placeholder (0) — the real
- * rule-based scoring + repeat-offender window arrive with the enrichment plan.
+ * Consumes {@code events.raw}, delegates the real classification + threat scoring
+ * (with dedup and the repeat-offender window) to {@link EnrichmentService}, and
+ * republishes the enriched event to {@code events.enriched} preserving correlationId.
+ * Duplicate redeliveries are dropped by the service (empty result) and not published.
  */
 @Component
 public class RawEventListener {
 
-    private final ObjectMapper objectMapper;
-    private final EnrichedEventPublisher enrichedEventPublisher;
-    private final Clock clock;
+    private static final Logger logger = LoggerFactory.getLogger(RawEventListener.class);
 
-    public RawEventListener(ObjectMapper objectMapper, EnrichedEventPublisher enrichedEventPublisher, Clock clock) {
+    private final ObjectMapper objectMapper;
+    private final EnrichmentService enrichmentService;
+    private final EnrichedEventPublisher enrichedEventPublisher;
+
+    public RawEventListener(ObjectMapper objectMapper,
+                            EnrichmentService enrichmentService,
+                            EnrichedEventPublisher enrichedEventPublisher) {
         this.objectMapper = objectMapper;
+        this.enrichmentService = enrichmentService;
         this.enrichedEventPublisher = enrichedEventPublisher;
-        this.clock = clock;
     }
 
     @KafkaListener(topics = "${wsa.topics.events-raw}", groupId = "enrichment")
@@ -38,25 +42,14 @@ public class RawEventListener {
                 });
         RawEventMessage rawEvent = incoming.payload();
 
-        String attackType = displayNameFor(rawEvent.rule().category());
-        int placeholderThreatScore = 0;
-        Instant receivedAt = Instant.now(clock);
-
-        EnrichedEventMessage enriched =
-                new EnrichedEventMessage(rawEvent, attackType, placeholderThreatScore, receivedAt);
-        enrichedEventPublisher.publish(
-                MessageEnvelope.of(incoming.correlationId(), incoming.occurredAt(), enriched));
-    }
-
-    private static String displayNameFor(AttackCategory attackCategory) {
-        return switch (attackCategory) {
-            case INJECTION -> "SQL/Command Injection";
-            case XSS -> "Cross-Site Scripting";
-            case PROTOCOL_VIOLATION -> "Protocol Anomaly";
-            case DATA_LEAKAGE -> "Data Exfiltration";
-            case BOT -> "Bot Activity";
-            case DOS -> "Denial of Service";
-            case RATE_LIMIT -> "Rate Limiting";
-        };
+        enrichmentService.enrich(rawEvent).ifPresentOrElse(
+                enriched -> {
+                    logger.info("RawEventListener - enriched eventId={} attackType={} threatScore={} correlationId={}",
+                            rawEvent.eventId(), enriched.attackType(), enriched.threatScore(), incoming.correlationId());
+                    enrichedEventPublisher.publish(
+                            MessageEnvelope.of(incoming.correlationId(), incoming.occurredAt(), enriched));
+                },
+                () -> logger.info("RawEventListener - duplicate eventId={} skipped correlationId={}",
+                        rawEvent.eventId(), incoming.correlationId()));
     }
 }
