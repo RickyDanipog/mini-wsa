@@ -8,6 +8,7 @@ spring:
     consumer:
       auto-offset-reset: earliest
 wsa:
+  storage: inmemory
   consumer-group: event-store
   topics:
     enriched: events.enriched

@@ -3,6 +3,8 @@ server:
 spring:
   application:
     name: analytics
+wsa:
+  storage: inmemory
 management:
   endpoints:
     web:

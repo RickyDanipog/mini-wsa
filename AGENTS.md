@@ -28,7 +28,7 @@ stores them, and serves analytics APIs. Backend only, Java + Spring Boot.
 | Language | **Java 21 (LTS)** | records, sealed types, pattern matching, switch expressions |
 | Framework | **Spring Boot 3.x** | Web, Validation, Actuator, Test |
 | Build | **Maven** (multi-module) | root aggregator + one module per service |
-| Storage | **Mongo + Redis** (see `03-sdd.md` §7) | two ports: `EventStore` (Mongo) + `OffenderWindow` (Mongo→Redis). In-memory adapters now; **PostgreSQL** built as a load-test comparison; ClickHouse is words-only. Domain never changes. |
+| Storage | **Mongo + Redis** (see `03-sdd.md` §7) | two ports: `EventStore` (Mongo) + `OffenderWindow` (Mongo→Redis). In-memory adapters now; **PostgreSQL** built as a load-test comparison; ClickHouse is words-only. Domain never changes. **Active adapter is selected per service by the `wsa.storage` property** (`inmemory` default via `@ConditionalOnProperty(matchIfMissing=true)`; each new adapter is gated on its own value — `mongo`/`postgres`/`redis` — so all coexist and exactly one is active). |
 | Containers | **Docker + Docker Compose** | `docker compose up` brings up full stack |
 | IDE | **IntelliJ IDEA CE** | Maven-native; import root `pom.xml` |
 | Tests | JUnit 5 · Spring Boot Test / MockMvc · **Testcontainers** | real storage in integration tests |
