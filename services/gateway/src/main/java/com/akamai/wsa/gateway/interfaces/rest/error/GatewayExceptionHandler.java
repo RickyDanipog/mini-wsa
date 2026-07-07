@@ -9,7 +9,6 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 import java.util.List;
 
-/** Maps gateway request failures to the structured {@code {error:{code,message,details[]}}} 400 body. */
 @RestControllerAdvice
 public class GatewayExceptionHandler {
 

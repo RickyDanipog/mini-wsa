@@ -13,7 +13,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
-/** Wires config -> generate -> output, dispatching on the configured {@code outputMode}. */
 @Component
 public class GeneratorRunner implements CommandLineRunner {
 

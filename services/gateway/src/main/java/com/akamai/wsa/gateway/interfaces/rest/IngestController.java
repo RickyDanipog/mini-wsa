@@ -27,12 +27,6 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
-/**
- * Write-path entry point. Accepts a single event or an array, validates the
- * batch all-or-nothing, maps each valid event to the {@link RawEventMessage}
- * contract and publishes it (enveloped, correlation-tagged) to {@code events.raw}.
- * Stores nothing.
- */
 @RestController
 @RequestMapping("/v1/events")
 class IngestController {

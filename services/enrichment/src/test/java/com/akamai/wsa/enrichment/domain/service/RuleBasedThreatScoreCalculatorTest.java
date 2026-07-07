@@ -24,35 +24,28 @@ class RuleBasedThreatScoreCalculatorTest {
 
     static Stream<Arguments> gradedScoringMatrix() {
         return Stream.of(
-                // Worked examples from the assignment.
                 matrixCase(Severity.CRITICAL, Action.DENY, "/api/v1/login", false, 75),
                 matrixCase(Severity.CRITICAL, Action.DENY, "/api/v1/login", true, 90),
 
-                // Severity tiers (DENY + non-sensitive + no repeat = severity + 20).
                 matrixCase(Severity.CRITICAL, Action.DENY, "/public", false, 60),
                 matrixCase(Severity.HIGH, Action.DENY, "/public", false, 50),
                 matrixCase(Severity.MEDIUM, Action.DENY, "/public", false, 40),
                 matrixCase(Severity.LOW, Action.DENY, "/public", false, 30),
 
-                // Action tiers (LOW + non-sensitive + no repeat = 10 + action).
                 matrixCase(Severity.LOW, Action.DENY, "/public", false, 30),
                 matrixCase(Severity.LOW, Action.ALERT, "/public", false, 20),
                 matrixCase(Severity.LOW, Action.MONITOR, "/public", false, 10),
 
-                // Minimal event: LOW + MONITOR + non-sensitive + no repeat = 10.
                 matrixCase(Severity.LOW, Action.MONITOR, "/public/home", false, 10),
 
-                // Sensitive-path bump on both /admin and /login (and substring matches).
                 matrixCase(Severity.LOW, Action.MONITOR, "/admin", false, 25),
                 matrixCase(Severity.LOW, Action.MONITOR, "/login", false, 25),
                 matrixCase(Severity.LOW, Action.MONITOR, "/admin/users", false, 25),
                 matrixCase(Severity.LOW, Action.MONITOR, "/public/home", false, 10),
 
-                // Repeat-offender bump.
                 matrixCase(Severity.MEDIUM, Action.ALERT, "/public", true, 45),
                 matrixCase(Severity.HIGH, Action.DENY, "/admin", true, 80),
 
-                // Highest attainable combination = 90 (all bumps on CRITICAL/DENY).
                 matrixCase(Severity.CRITICAL, Action.DENY, "/admin", true, 90)
         );
     }
@@ -66,7 +59,6 @@ class RuleBasedThreatScoreCalculatorTest {
 
     @Test
     void capsTotalAtOneHundred() {
-        // Synthetic rule set whose raw sum (120) exceeds the cap.
         ThreatScoreCalculator overflowing = new RuleBasedThreatScoreCalculator(List.of(
                 inputs -> 70, inputs -> 50));
         ThreatScore score = overflowing.calculate(

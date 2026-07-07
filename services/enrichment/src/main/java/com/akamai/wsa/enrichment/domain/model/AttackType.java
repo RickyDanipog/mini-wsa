@@ -2,11 +2,6 @@ package com.akamai.wsa.enrichment.domain.model;
 
 import com.akamai.wsa.contracts.AttackCategory;
 
-/**
- * Human-readable attack classification derived from a raw event's rule category.
- * The wire form on {@code events.enriched} is the {@link #displayName()} String,
- * so this enum is enrichment-local (there is no {@code contracts.AttackType}).
- */
 public enum AttackType {
     SQL_COMMAND_INJECTION("SQL/Command Injection"),
     CROSS_SITE_SCRIPTING("Cross-Site Scripting"),

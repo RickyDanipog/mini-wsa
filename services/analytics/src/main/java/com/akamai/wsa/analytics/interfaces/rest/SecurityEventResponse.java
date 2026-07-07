@@ -7,10 +7,6 @@ import com.akamai.wsa.contracts.Severity;
 
 import java.time.Instant;
 
-/**
- * Assignment-exact flat enriched-event JSON: original DLR fields (with nested {@code rule}/{@code geoLocation})
- * plus the three enrichment fields {@code attackType}, {@code threatScore}, {@code receivedAt}.
- */
 public record SecurityEventResponse(
         String eventId,
         Instant timestamp,

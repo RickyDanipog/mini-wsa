@@ -2,11 +2,6 @@ package com.akamai.wsa.contracts;
 
 import java.time.Instant;
 
-/**
- * The envelope wrapping every Kafka message: a correlationId for tracing across
- * the async pipeline, the time the event occurred, a schema version, and the
- * typed payload.
- */
 public record MessageEnvelope<T>(
         String correlationId,
         Instant occurredAt,

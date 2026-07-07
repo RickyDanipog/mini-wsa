@@ -10,12 +10,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
 
-/**
- * Assembles a full dataset: background events plus {@code waveCount} attack
- * waves, each a burst of {@code waveSize} events from one client IP hitting one
- * path within a two-minute span (a repeat-offender burst of &gt;5-in-10-min that
- * exercises the enrichment repeat-offender rule). Deterministic for a given seed.
- */
 @Component
 public class DatasetGenerator {
 

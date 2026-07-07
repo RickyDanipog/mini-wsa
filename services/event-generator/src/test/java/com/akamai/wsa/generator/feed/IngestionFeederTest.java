@@ -24,7 +24,6 @@ class IngestionFeederTest {
 
     @Test
     void continuesWhenABatchIsRejected() {
-        // a client that rejects (returns 0) must not abort the run; remaining batches still post
         IngestionClient rejectingThenAccepting = new IngestionClient() {
             private int call = 0;
 
@@ -37,7 +36,7 @@ class IngestionFeederTest {
 
         int accepted = feeder.feed(eventList(250), 100);
 
-        assertThat(accepted).isEqualTo(150); // first batch rejected (0), next two accepted (100+50)
+        assertThat(accepted).isEqualTo(150);
     }
 
     private List<GeneratedEvent> eventList(int count) {

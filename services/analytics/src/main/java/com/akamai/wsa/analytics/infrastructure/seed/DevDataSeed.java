@@ -8,11 +8,6 @@ import com.akamai.wsa.contracts.Severity;
 import java.time.Instant;
 import java.util.List;
 
-/**
- * Fixed development seed so the analytics endpoints return meaningful data with no external store.
- * Varied across configId, category, action, clientIp, path and timestamp. Used only by the default
- * (non-mongo) profile; the Mongo adapter reads a real replica instead.
- */
 public final class DevDataSeed {
 
     private static final String HOST = "shop.example.com";

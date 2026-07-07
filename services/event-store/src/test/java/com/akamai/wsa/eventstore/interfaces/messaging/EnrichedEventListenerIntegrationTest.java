@@ -48,7 +48,7 @@ class EnrichedEventListenerIntegrationTest {
         try (Producer<String, String> producer = createProducer()) {
             String json = objectMapper.writeValueAsString(envelope);
             producer.send(new ProducerRecord<>("events.enriched", "14227", json));
-            producer.send(new ProducerRecord<>("events.enriched", "14227", json)); // duplicate delivery
+            producer.send(new ProducerRecord<>("events.enriched", "14227", json));
             producer.flush();
         }
 
@@ -56,7 +56,6 @@ class EnrichedEventListenerIntegrationTest {
                 .until(() -> eventStore.findByConfigId(14227).stream()
                         .anyMatch(stored -> stored.eventId().equals("evt-00132")));
 
-        // idempotent: the duplicate must not double-count
         assertThat(eventStore.countAll()).isEqualTo(1);
         assertThat(eventStore.findByConfigId(14227)).extracting(StoredEvent::eventId).containsExactly("evt-00132");
     }

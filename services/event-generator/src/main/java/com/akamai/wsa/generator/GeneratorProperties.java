@@ -5,13 +5,6 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
 
 import java.time.Instant;
 
-/**
- * Bound generator configuration (prefix {@code wsa.generator}).
- *
- * <p>{@code targetUrl} is the gateway's base URL; the feeder appends
- * {@code /v1/events/ingest}. {@code baseTimestamp} anchors deterministic event
- * timestamps so a given {@code seed} reproduces an identical dataset.
- */
 @ConfigurationProperties(prefix = "wsa.generator")
 public record GeneratorProperties(
         @DefaultValue("1") long seed,

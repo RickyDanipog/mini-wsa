@@ -8,10 +8,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Component;
 
-/**
- * Publishes validated raw events to the {@code events.raw} topic as JSON,
- * keyed by clientIp so one attacker's events keep per-partition order.
- */
 @Component
 public class RawEventPublisher {
 

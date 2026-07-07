@@ -12,12 +12,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 
-/**
- * Consumes {@code events.raw}, delegates the real classification + threat scoring
- * (with dedup and the repeat-offender window) to {@link EnrichmentService}, and
- * republishes the enriched event to {@code events.enriched} preserving correlationId.
- * Duplicate redeliveries are dropped by the service (empty result) and not published.
- */
 @Component
 public class RawEventListener {
 

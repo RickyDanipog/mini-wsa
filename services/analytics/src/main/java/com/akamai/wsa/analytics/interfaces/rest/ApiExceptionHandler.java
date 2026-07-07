@@ -10,7 +10,6 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 
-/** Maps query-parameter binding problems on the read endpoints to structured 400 responses. */
 @RestControllerAdvice(assignableTypes = {StatsController.class, SamplesController.class})
 public class ApiExceptionHandler {
 

@@ -2,10 +2,6 @@ package com.akamai.wsa.contracts;
 
 import java.time.Instant;
 
-/**
- * A validated, untransformed security event as it leaves the gateway on the
- * {@code events.raw} topic. Enrichment fields are not present yet.
- */
 public record RawEventMessage(
         String eventId,
         Instant timestamp,

@@ -4,7 +4,6 @@ import com.akamai.wsa.enrichment.domain.model.ThreatScore;
 
 import java.util.List;
 
-/** Sums the points from every configured {@link ScoringRule} and caps the total at 100. */
 public final class RuleBasedThreatScoreCalculator implements ThreatScoreCalculator {
 
     private final List<ScoringRule> scoringRules;

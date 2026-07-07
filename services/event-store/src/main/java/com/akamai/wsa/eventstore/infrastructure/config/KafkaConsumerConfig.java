@@ -15,13 +15,6 @@ import org.springframework.kafka.core.DefaultKafkaConsumerFactory;
 import org.springframework.kafka.support.serializer.ErrorHandlingDeserializer;
 import org.springframework.kafka.support.serializer.JsonDeserializer;
 
-/**
- * Consumer wiring for {@code events.enriched}. A bare {@link JsonDeserializer}
- * erases the envelope's type parameter and would deliver
- * {@code MessageEnvelope<LinkedHashMap>}; here the deserializer target is pinned
- * to the parametric {@code MessageEnvelope<EnrichedEventMessage>} and type
- * headers are disabled so the configured type wins over any producer header.
- */
 @Configuration
 public class KafkaConsumerConfig {
 
@@ -47,7 +40,7 @@ public class KafkaConsumerConfig {
                     ConsumerFactory<String, MessageEnvelope<EnrichedEventMessage>> enrichedConsumerFactory) {
         var factory = new ConcurrentKafkaListenerContainerFactory<String, MessageEnvelope<EnrichedEventMessage>>();
         factory.setConsumerFactory(enrichedConsumerFactory);
-        // Dead-letter: wrap with a DefaultErrorHandler + DeadLetterPublishingRecoverer in hardening (SDD §9).
+
         return factory;
     }
 }

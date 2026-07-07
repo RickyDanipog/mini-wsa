@@ -7,10 +7,6 @@ import jakarta.validation.constraints.NotNull;
 
 import java.time.Instant;
 
-/**
- * Inbound ingest request for a single security event. Bean Validation guards
- * the required fields, enum binding and ISO-8601 timestamp at the boundary.
- */
 public record IngestEventRequest(
         @NotBlank String eventId,
         @NotNull Instant timestamp,

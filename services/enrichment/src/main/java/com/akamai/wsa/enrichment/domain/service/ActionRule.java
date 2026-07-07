@@ -1,6 +1,5 @@
 package com.akamai.wsa.enrichment.domain.service;
 
-/** Contributes points by taken action: DENY 20 / ALERT 10 / MONITOR 0. */
 public final class ActionRule implements ScoringRule {
     public static final int DENY_POINTS = 20;
     public static final int ALERT_POINTS = 10;

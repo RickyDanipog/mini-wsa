@@ -8,10 +8,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Component;
 
-/**
- * Publishes enriched events to {@code events.enriched} as JSON, keyed by configId
- * for aggregation locality.
- */
 @Component
 public class EnrichedEventPublisher {
 

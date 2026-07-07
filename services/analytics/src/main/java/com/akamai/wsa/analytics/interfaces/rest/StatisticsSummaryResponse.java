@@ -7,7 +7,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/** Assignment-exact JSON shape for {@code GET /v1/stats/summary}. */
 public record StatisticsSummaryResponse(
         Integer configId,
         TimeRangeResponse timeRange,

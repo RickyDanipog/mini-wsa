@@ -10,11 +10,6 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 
-/**
- * In-memory repeat-offender window (Redis deferred). Per-instance only — correct for
- * single-instance dry runs; horizontal scaling needs the Redis window and
- * {@code events.raw} partitioned by clientIp so one IP maps to one consumer.
- */
 @Component
 public class InMemoryOffenderWindow implements OffenderWindow {
 

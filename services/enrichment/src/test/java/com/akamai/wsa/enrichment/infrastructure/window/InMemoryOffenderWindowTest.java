@@ -46,7 +46,6 @@ class InMemoryOffenderWindowTest {
 
     @Test
     void sixthEventInWindowIsFirstToCrossRepeatOffenderThreshold() {
-        // Locked semantics: flag when count > 5, i.e. the 6th event within the window.
         for (int i = 1; i <= 5; i++) {
             window.recordEvent("10.0.0.1", NOW);
         }

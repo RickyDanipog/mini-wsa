@@ -7,11 +7,6 @@ import org.springframework.stereotype.Component;
 
 import java.util.List;
 
-/**
- * Serializes generated events to the gateway's ingestible JSON array shape
- * (ISO-8601 timestamps, nested rule/geoLocation). The injected Spring-Boot
- * {@code ObjectMapper} is JavaTime-configured, so instants emit as ISO-8601.
- */
 @Component
 public class JsonEventWriter {
 

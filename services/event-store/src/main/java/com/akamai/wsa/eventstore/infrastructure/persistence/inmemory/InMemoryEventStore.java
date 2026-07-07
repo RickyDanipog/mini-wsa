@@ -8,11 +8,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
-/**
- * In-memory system of record for the dry-run pipeline. Idempotent by eventId, so
- * at-least-once Kafka redelivery does not double-count. A Mongo adapter drops in
- * behind this same {@link EventStore} port in the DB-candidate phase.
- */
 @Repository
 public class InMemoryEventStore implements EventStore {
 

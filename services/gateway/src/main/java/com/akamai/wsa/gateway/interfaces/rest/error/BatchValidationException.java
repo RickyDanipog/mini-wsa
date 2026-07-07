@@ -2,7 +2,6 @@ package com.akamai.wsa.gateway.interfaces.rest.error;
 
 import java.util.List;
 
-/** Raised when any event in the batch fails Bean Validation (all-or-nothing). */
 public class BatchValidationException extends RuntimeException {
 
     public record ItemViolation(String field, String message) {

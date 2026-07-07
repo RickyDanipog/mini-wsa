@@ -12,11 +12,6 @@ import org.springframework.stereotype.Component;
 
 import java.util.List;
 
-/**
- * Consumes enriched events off {@code events.enriched}, maps the wire contract to
- * the owned {@link StoredEvent}, and persists via the {@link EventStore} port
- * (idempotent by eventId — Kafka is at-least-once).
- */
 @Component
 public class EnrichedEventListener {
 

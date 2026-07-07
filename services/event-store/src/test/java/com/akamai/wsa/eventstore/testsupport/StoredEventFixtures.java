@@ -9,7 +9,6 @@ import com.akamai.wsa.eventstore.domain.model.StoredRule;
 
 import java.time.Instant;
 
-/** Fully-populated {@link StoredEvent} instances for tests. */
 public final class StoredEventFixtures {
 
     private StoredEventFixtures() {

@@ -18,10 +18,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-/**
- * Default runnable read store: filters and aggregates a fixed, in-memory list of enriched-event views.
- * No external store required — used for dry runs and fast tests. Mongo adapter is deferred (mongo profile).
- */
 public class InMemoryAnalyticsReadStore implements AnalyticsReadStore {
 
     private final List<EnrichedEventView> events;

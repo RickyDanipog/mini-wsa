@@ -18,7 +18,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class JsonEventWriterTest {
 
-    // Mirrors Spring Boot's autoconfigured mapper: ISO-8601 instants, not numeric timestamps.
     private final ObjectMapper objectMapper = JsonMapper.builder()
             .addModule(new JavaTimeModule())
             .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)

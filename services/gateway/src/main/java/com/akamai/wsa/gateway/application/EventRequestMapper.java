@@ -7,7 +7,6 @@ import com.akamai.wsa.gateway.interfaces.rest.dto.GeoLocationDto;
 import com.akamai.wsa.gateway.interfaces.rest.dto.IngestEventRequest;
 import com.akamai.wsa.gateway.interfaces.rest.dto.RuleDto;
 
-/** Pure DTO to contract mapper. No framework, no I/O. */
 public class EventRequestMapper {
 
     public RawEventMessage toRawEventMessage(IngestEventRequest ingestEventRequest) {

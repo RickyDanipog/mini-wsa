@@ -5,7 +5,6 @@ import com.akamai.wsa.contracts.Severity;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 
-/** Inbound representation of the security rule that matched a request. */
 public record RuleDto(
         @NotBlank String id,
         @NotBlank String name,

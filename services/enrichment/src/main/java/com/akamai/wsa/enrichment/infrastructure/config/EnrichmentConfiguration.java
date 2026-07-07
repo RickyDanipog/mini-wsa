@@ -14,7 +14,6 @@ import org.springframework.context.annotation.Configuration;
 import java.time.Clock;
 import java.util.List;
 
-/** Wires the pure domain services (which import no Spring) as Spring beans. */
 @Configuration
 public class EnrichmentConfiguration {
 

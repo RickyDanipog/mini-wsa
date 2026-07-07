@@ -14,11 +14,6 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
 
-/**
- * Orchestrates enrichment of a single raw event: dedup by eventId, record-then-read
- * the offender window, classify the attack type, and compute the threat score.
- * Thin — the graded logic lives in the pure domain services it delegates to.
- */
 @Service
 public class EnrichmentService {
 
@@ -43,7 +38,6 @@ public class EnrichmentService {
         this.threatScoreCalculator = threatScoreCalculator;
     }
 
-    /** Empty when the event was already processed (idempotent on redelivery). */
     public Optional<EnrichedEventMessage> enrich(RawEventMessage rawEvent) {
         if (!processedEventLog.markProcessed(rawEvent.eventId())) {
             return Optional.empty();

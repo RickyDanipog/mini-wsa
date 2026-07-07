@@ -6,7 +6,6 @@ import org.springframework.stereotype.Component;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentHashMap.KeySetView;
 
-/** In-memory dedup ledger (Redis/DB deferred). Per-instance only — fine for dry runs. */
 @Component
 public class InMemoryProcessedEventLog implements ProcessedEventLog {
 

@@ -5,10 +5,6 @@ import org.springframework.stereotype.Component;
 
 import java.util.List;
 
-/**
- * Splits a dataset into batches and POSTs each via an {@link IngestionClient},
- * summing accepted counts. A rejected batch (accepted 0) does not abort the run.
- */
 @Component
 public class IngestionFeeder {
 

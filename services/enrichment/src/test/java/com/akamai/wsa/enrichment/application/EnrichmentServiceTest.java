@@ -65,7 +65,6 @@ class EnrichmentServiceTest {
 
         assertThat(enriched).isPresent();
         assertThat(enriched.get().attackType()).isEqualTo("SQL/Command Injection");
-        // CRITICAL(40) + DENY(20) + sensitive /login(15) + no repeat = 75.
         assertThat(enriched.get().threatScore()).isEqualTo(75);
         assertThat(enriched.get().receivedAt()).isEqualTo(FIXED_NOW);
         assertThat(enriched.get().rawEvent().eventId()).isEqualTo("evt-1");
@@ -76,7 +75,6 @@ class EnrichmentServiceTest {
         for (int i = 1; i <= 5; i++) {
             assertThat(service.enrich(rawEvent("evt-" + i)).get().threatScore()).isEqualTo(75);
         }
-        // 6th event within the 10-minute window: count 6 > 5 => +15 repeat-offender bonus.
         assertThat(service.enrich(rawEvent("evt-6")).get().threatScore()).isEqualTo(90);
     }
 

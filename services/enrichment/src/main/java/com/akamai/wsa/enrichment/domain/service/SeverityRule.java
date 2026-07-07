@@ -1,6 +1,5 @@
 package com.akamai.wsa.enrichment.domain.service;
 
-/** Contributes points by rule severity: CRITICAL 40 / HIGH 30 / MEDIUM 20 / LOW 10. */
 public final class SeverityRule implements ScoringRule {
     public static final int CRITICAL_POINTS = 40;
     public static final int HIGH_POINTS = 30;

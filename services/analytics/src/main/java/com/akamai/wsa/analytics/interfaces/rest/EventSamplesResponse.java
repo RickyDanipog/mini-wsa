@@ -4,7 +4,6 @@ import com.akamai.wsa.analytics.domain.query.EventSamplesPage;
 
 import java.util.List;
 
-/** Assignment-exact JSON shape for {@code GET /v1/events/samples}. */
 public record EventSamplesResponse(long total, int limit, int offset, List<SecurityEventResponse> results) {
 
     public static EventSamplesResponse from(EventSamplesPage page) {

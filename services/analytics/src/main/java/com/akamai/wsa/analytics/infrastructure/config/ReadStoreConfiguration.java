@@ -10,7 +10,6 @@ import org.springframework.context.annotation.Profile;
 @Configuration
 public class ReadStoreConfiguration {
 
-    // Default runnable store for dry runs / sanity — active unless the `mongo` profile is on.
     @Bean
     @Profile("!mongo")
     public AnalyticsReadStore inMemoryAnalyticsReadStore() {

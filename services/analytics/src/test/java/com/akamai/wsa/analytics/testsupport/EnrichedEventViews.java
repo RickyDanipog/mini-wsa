@@ -7,7 +7,6 @@ import com.akamai.wsa.contracts.Severity;
 
 import java.time.Instant;
 
-/** Test builder for {@link EnrichedEventView} — supplies realistic defaults for the fields under test. */
 public final class EnrichedEventViews {
 
     private EnrichedEventViews() {

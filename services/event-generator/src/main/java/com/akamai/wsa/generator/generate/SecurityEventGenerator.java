@@ -9,12 +9,6 @@ import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Random;
 
-/**
- * Produces realistic, randomized-but-deterministic security events. All
- * randomness comes from the supplied {@link Random}; timestamps derive from a
- * fixed base instant, so a given seed reproduces an identical dataset. No
- * wall-clock, {@code Math.random()}, or unseeded {@code Random} is used.
- */
 public class SecurityEventGenerator {
 
     private static final List<String> CATEGORIES =
