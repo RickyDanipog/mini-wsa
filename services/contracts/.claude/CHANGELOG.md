@@ -8,6 +8,12 @@ Format: `## YYYY-MM-DD — <summary>` · what changed · affected services · re
 
 ---
 
+## 2026-07-07 — Mongo `events` collection contract removed (Postgres won the benchmark)
+
+Removed the shared Mongo `events` collection schema and the MongoDB adapters from `main`. PostgreSQL was chosen after the storage benchmark (`docs/storage-benchmark.md`): stats-aggregation p95 431 ms vs Mongo 1468 ms (3.4×), samples p95 36 ms vs 106 ms, persist 1302 vs 1104 ev/s. The Postgres `events` table remains the live shared store contract. Redis (offender window) is unaffected. The Mongo adapters + the full benchmark harness are preserved on the `candidate/mongo-store` branch.
+
+**Affected services:** event-store (MongoEventStore removed), analytics (MongoAnalyticsReadStore removed). Shipped modes are now `inmemory` (default) and `postgres`.
+
 ## 2026-07-07 — Shared Postgres `events` table schema added
 
 Added the relational `events` table (DB `wsa`) as a cross-service contract for the Postgres storage-candidate phase, mirroring the Mongo `events` collection: event-store is the sole writer (`INSERT ... ON CONFLICT (event_id) DO NOTHING`, first-write-wins), analytics reads it read-only. Flat columns (rule/geo flattened to `rule_*` / `geo_*`), VARCHAR enum-name encoding, `TIMESTAMPTZ` for `Instant` (bind/read as `OffsetDateTime` UTC), indexes `(config_id,timestamp)` / `(client_ip,timestamp)` / `(timestamp)`. See context.md "Shared Postgres `events` table".

@@ -59,20 +59,19 @@ enveloped generic type.
 
 ## Shared store schema
 
-When `wsa.storage=mongo` or `wsa.storage=postgres`, **event-store WRITES** and
-**analytics READS** the same `events` store (DB `wsa`) — locally one instance, a
-read replica in production. This shape is a cross-service contract, same rule as
-the Kafka schemas.
+When `wsa.storage=postgres`, **event-store WRITES** and **analytics READS** the
+same `events` store (DB `wsa`) — locally one instance, a read replica in
+production. This shape is a cross-service contract, same rule as the Kafka schemas.
 
-- **Mongo** — collection `events`; flat document with nested `rule`/`geoLocation`;
-  `_id` = `eventId` for idempotent upsert (first-write-wins).
-- **Postgres** — table `events`; the relational mirror, with `rule`/`geo` flattened
-  to `rule_*`/`geo_*` columns; `event_id` primary key; `INSERT ... ON CONFLICT (event_id) DO NOTHING`.
-- Both use **enum-name encoding**, map `Instant` to UTC timestamps, and carry
-  indexes `(configId, timestamp desc)`, `(clientIp, timestamp desc)`, `(timestamp desc)`.
+- **Postgres** — table `events`, with `rule`/`geo` flattened to `rule_*`/`geo_*`
+  columns; `event_id` primary key; `INSERT ... ON CONFLICT (event_id) DO NOTHING`
+  (first-write-wins); **enum-name encoding**; `Instant` mapped to UTC `TIMESTAMPTZ`;
+  indexes `(config_id, timestamp desc)`, `(client_ip, timestamp desc)`, `(timestamp desc)`.
 - Event-store is the **sole writer**; analytics is **read-only**. Each service maps
   the shape with its own class (no shared Spring-Data type here — this stays a plain jar),
-  but collection/table names, field/column names, and encoding MUST match exactly.
+  but the table name, column names, and encoding MUST match exactly.
+- MongoDB was an evaluated storage candidate (its collection contract lived here);
+  Postgres won the benchmark, so the Mongo adapter now lives on the `candidate/mongo-store` branch.
 
 Full field list and DDL: [`.claude/context.md`](.claude/context.md).
 

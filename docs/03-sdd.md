@@ -26,8 +26,9 @@
 - **Trace everything.** A `correlationId` is created at the gateway and
   propagated on every Kafka message and HTTP hop.
 - **In-memory first, real stores later.** Each service ships in-memory adapters
-  for dry runs, then swaps in its real store (Mongo/Redis) behind the same port;
-  `event-store` additionally gets a PostgreSQL adapter for a comparative load test.
+  for dry runs, then swaps in its real store (PostgreSQL/Redis) behind the same
+  port; `event-store` and `analytics` run on PostgreSQL, chosen over Mongo after
+  a comparative load test (§7, `storage-benchmark.md`).
 
 > **Tradeoff acknowledged.** This is deliberately more than a take-home strictly
 > needs (the assignment favors "working software over perfection"). It is chosen
@@ -75,9 +76,9 @@ tools** (consumers of analytics). Everything else is internal.
                                                             └─────────────┘          writes│
                                                                                           ▼
                                                                                    ┌──────────────┐
-   ┌───────────────┐   GET /v1/stats/*, /v1/events/samples                         │ Mongo primary│
-   │ Analyst/tools │ ────────────────────────────────▶  ┌───────────────┐  reads   └──────┬───────┘
-   └───────────────┘                                    │  analytics    │ ◀──────────── replica
+   ┌───────────────┐   GET /v1/stats/*, /v1/events/samples                         │  PostgreSQL  │
+   │ Analyst/tools │ ────────────────────────────────▶  ┌───────────────┐  reads   │   primary    │
+   └───────────────┘                                    │  analytics    │ ◀──────── read replica
                                                          │  :8084        │
                                                          └───────────────┘
 ```
@@ -88,8 +89,8 @@ tools** (consumers of analytics). Everything else is internal.
 |---------|------|---------|----------|------|
 | **gateway** | 8081 | REST `POST /v1/events/ingest` (later Kafka/Spark) | publishes `events.raw` | request validation, DTO→contract transform, correlationId minting |
 | **enrichment** | 8082 | consumes `events.raw` | publishes `events.enriched`; reads/writes Redis | classification, threat scoring, repeat-offender window (Redis) |
-| **event-store** | 8083 | consumes `events.enriched` | writes Mongo primary | the enriched-event system of record |
-| **analytics** | 8084 | REST `GET /v1/stats/*`, `/v1/events/samples` | reads Mongo replica | aggregation + sample queries (read side) |
+| **event-store** | 8083 | consumes `events.enriched` | writes PostgreSQL primary | the enriched-event system of record |
+| **analytics** | 8084 | REST `GET /v1/stats/*`, `/v1/events/samples` | reads PostgreSQL read replica | aggregation + sample queries (read side) |
 | **event-generator** | — (CLI) | — | REST → gateway (later Kafka producer) | realistic events + attack waves |
 | **contracts** | — (lib) | — | — | shared Kafka message schemas + envelope |
 
@@ -102,7 +103,7 @@ Every service repeats the same internal shape:
 ```
 interfaces (REST controllers / Kafka listeners)  →  application (use cases)  →  domain (model + ports)
                                                                    ▲
-infrastructure (Kafka producers, Mongo/Redis adapters) implements the ports
+infrastructure (Kafka producers, PostgreSQL/Redis adapters) implements the ports
 ```
 So the ports we built (`EventStore`, `OffenderWindow`, the use-case interfaces)
 live inside their owning service; `contracts` holds only the wire DTOs.
@@ -136,7 +137,7 @@ generator/client ─POST /v1/events/ingest─▶ gateway
             · threatScore = ruleBasedCalculator.calculate(inputs)   [pure]
             · record this event into the Redis window
             · publish EnrichedEventMessage → events.enriched
-               └▶ event-store consumes events.enriched · persist to Mongo primary
+               └▶ event-store consumes events.enriched · persist to PostgreSQL primary
 ```
 Validation failures are rejected synchronously at the gateway (201/400 to the
 caller) — only valid events ever reach Kafka.
@@ -144,7 +145,7 @@ caller) — only valid events ever reach Kafka.
 ### 5.2 Read path (analytics)
 ```
 analyst ─GET /v1/stats/summary?configId&from&to─▶ analytics
-   analytics: query Mongo replica · aggregate (byCategory/byAction/topAttackers/topPaths) · 200
+   analytics: query PostgreSQL read replica · aggregate (byCategory/byAction/topAttackers/topPaths) · 200
 analyst ─GET /v1/events/samples?...&limit&offset─▶ analytics
    analytics: filter + sort desc + page + total · 200
 ```
@@ -183,16 +184,41 @@ minutes" where the event being scored is one of those that exist.)
 
 ## 7. Storage & Data Ownership
 
+**Decision: PostgreSQL is the shipped backend.** Both Mongo and Postgres were
+implemented behind the `EventStore` / `AnalyticsReadStore` ports and benchmarked
+under a fixed, seeded load; **Postgres won and is now the system of record.** The
+Mongo adapter is removed from `main` (preserved on the `candidate/mongo-store`
+branch). The in-memory adapter remains the **default for dev/tests**. The
+architecture is unchanged either way — event-store is the sole writer, analytics
+reads the same store read-only (a read replica in production).
+
 | Store | Owner | Purpose | Path |
 |-------|-------|---------|------|
-| **Mongo primary** | event-store | enriched-event system of record | in-memory → Mongo; **PostgreSQL adapter for load-test comparison** |
-| **Mongo replica** | analytics (read-only) | aggregation + sample reads | shares event-store schema (accepted coupling) |
+| **PostgreSQL primary** | event-store | enriched-event system of record | in-memory (dev/tests) → PostgreSQL |
+| **PostgreSQL read replica** | analytics (read-only) | aggregation + sample reads | shares event-store schema (accepted coupling) |
 | **Redis** | enrichment | repeat-offender sliding window | in-memory → Redis |
 
-Event data is **append-only, timestamped** → time + `(clientIp, timestamp)` +
-`(configId, timestamp)` indexes drive the queries. Locally the "replica" is one
-Mongo instance analytics connects to read-only; a true replica set is the
-production shape. ClickHouse remains a **words-only** scaling talking point.
+Event data is **append-only, timestamped**. The `events` table is indexed on
+`(config_id, timestamp)`, `(client_ip, timestamp)`, and `(timestamp)` to drive
+the aggregation and sample queries. Locally the "replica" is one Postgres
+instance analytics connects to read-only; a true read replica is the production
+shape. ClickHouse remains a **words-only** scaling talking point (§10).
+
+### 7.1 Why Postgres — benchmark evidence
+
+The choice was **benchmark-driven**, not a default. Both stores ran the same
+100k-event workload on a single laptop-class host (3-run medians); full method
+and results in `storage-benchmark.md`. Headline:
+
+| Metric | Postgres | Mongo | Result |
+|--------|----------|-------|--------|
+| `/v1/stats/summary` p95 | **431 ms** | 1468 ms | 3.4× faster |
+| `/v1/stats/summary` p99 | **492 ms** | 1625 ms | — |
+| `/v1/events/samples` p95 | **36 ms** | 106 ms | 2.9× faster |
+| Write persist rate | **1302 ev/s** | 1104 ev/s | ~18% faster |
+
+Postgres won on every axis that matters here — the stats aggregation (the read
+that hurts) most decisively — so it ships and Mongo was retired to a branch.
 
 ---
 
@@ -219,8 +245,8 @@ production shape. ClickHouse remains a **words-only** scaling talking point.
 - **Error handling:** typed exceptions → `@RestControllerAdvice` at gateway/
   analytics; Kafka consumers use a dead-letter topic for poison messages.
 - **Logging:** single-line structured logs with correlationId as the third arg.
-- **Config:** topic names, Redis/Mongo URIs, window size, thresholds, page caps
-  in `application.yml` per service.
+- **Config:** topic names, Redis URI, datasource URL, window size, thresholds,
+  page caps in `application.yml` per service.
 
 ---
 
@@ -231,9 +257,26 @@ production shape. ClickHouse remains a **words-only** scaling talking point.
 | Ingestion spikes | gateway is stateless → scale horizontally behind an LB; Kafka absorbs bursts |
 | Enrichment throughput | scale the enrichment **consumer group**; partition `events.raw` by `clientIp` (keeps per-IP window correct on one partition) |
 | Repeat-offender at scale | Redis sliding window (shared, O(log n)) instead of per-instance state |
-| Storage write load | event-store consumer group; Mongo sharding; **columnar OLAP (ClickHouse)** as the analytics-at-100× story |
-| Read load | analytics scales independently off the replica; pre-aggregated rollups / cache hot ranges |
+| Storage write load | event-store consumer group; Postgres partitioning; **columnar OLAP (ClickHouse)** as the analytics-at-100× story |
+| Read load | analytics scales independently off the read replica; pre-aggregated rollups / cache hot ranges |
 | Isolation | a slow/failed stage back-pressures via Kafka lag instead of cascading failure |
+
+### 10.1 Measured scaling (single host)
+
+The scaling sweep varied Kafka partitions against enrichment + event-store
+consumer replicas (`storage-benchmark.md`). The pipeline **does** scale with
+partitions + matching consumer replicas, up to a measured **knee of ~2200 ev/s
+at 4 replicas / 4 partitions**. Past that point growth is **sub-linear (1.7×,
+not 4×)** because a single host is CPU-bound once ~4 replicas are busy.
+Partitions without matching consumers give no gain; replicas beyond the
+partition count sit idle. These absolute numbers are single-host — the
+**transferable result is the shape**: throughput tracks `min(partitions,
+consumers)` until the underlying host saturates.
+
+To go **10×**, spread the same consumer groups across more hosts and add
+partitions in lockstep; the read side scales independently off the read replica.
+At **100×**, the write path stays Kafka + Postgres but the analytics read path
+moves to a **columnar OLAP store (ClickHouse)** — still words-only, not built.
 
 ---
 
@@ -244,7 +287,7 @@ production shape. ClickHouse remains a **words-only** scaling talking point.
   aggregation + paging.
 - **Per-service integration (Testcontainers):** gateway→Kafka publish;
   enrichment consume→enrich→publish (embedded/Testcontainers Kafka + Redis);
-  event-store consume→persist (Mongo); analytics read (Mongo).
+  event-store consume→persist (PostgreSQL); analytics read (PostgreSQL).
 - **Contract tests:** producer/consumer agree on the `contracts` schemas.
 - **End-to-end (compose):** generator → full pipeline → analytics query returns
   the expected aggregates.
@@ -253,7 +296,7 @@ production shape. ClickHouse remains a **words-only** scaling talking point.
 
 ## 12. Deployment (`docker-compose`)
 
-Brings up: `kafka` (single-broker KRaft), `mongo`, `redis`, and the five service
+Brings up: `kafka` (single-broker KRaft), `postgres`, `redis`, and the five service
 containers (`gateway:8081`, `enrichment:8082`, `event-store:8083`,
 `analytics:8084`, `event-generator` run on demand). Each service = its own Maven
 module + Dockerfile. `docker compose up` = the whole pipeline.
@@ -267,7 +310,7 @@ module + Dockerfile. `docker compose up` = the whole pipeline.
 | enums, `SecurityEvent`/`DataLogRecord`/VOs | `contracts` (wire DTOs) + each service's domain model |
 | `AttackTypeClassifier`, `ThreatScoreCalculator`, rules, `ThreatScoringInputs` | **enrichment** |
 | `OffenderWindow` port + impl | **enrichment** (Redis) |
-| `EventStore` port + in-memory/Mongo adapters | **event-store** |
+| `EventStore` port + in-memory/Postgres adapters | **event-store** |
 | stats/samples use-cases + records | **analytics** |
 | ingest DTOs, validation, mapper, `IngestSecurityEvents` | **gateway** (+ publish instead of store) |
 | `event-generator` module | unchanged (feeds gateway) |
@@ -284,6 +327,6 @@ is wasted — only relocated across service boundaries.
    idempotent on `eventId` (dedup). To design in the per-service plans.
 3. **Ordering** — per-IP order preserved by partitioning `events.raw` on
    `clientIp`; cross-IP order not guaranteed (acceptable).
-4. **Local "replica"** — single Mongo shared read-only locally; real replica set in prod.
+4. **Local "replica"** — single Postgres shared read-only locally; real read replica in prod.
 5. **Delivery risk** — 5 services + Kafka is ambitious for the timebox; mitigate
    by shipping the in-memory/single-broker path first and hardening later.

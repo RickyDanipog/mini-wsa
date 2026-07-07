@@ -13,8 +13,8 @@ schema/indexes.
   `threatScore`, `receivedAt`) to the domain `StoredEvent`.
 - Persist each record idempotently, keyed by `eventId`, so replays and
   at-least-once redelivery never create duplicates.
-- Own creation of the store's schema/indexes for the DB backends (Mongo indexes,
-  Postgres `CREATE TABLE/INDEX IF NOT EXISTS`) at startup.
+- Own creation of the store's schema/indexes for the DB backend (Postgres
+  `CREATE TABLE/INDEX IF NOT EXISTS`) at startup.
 
 There is **no business REST API** — the store is written from Kafka and read by
 analytics directly against the shared collection/table. The only HTTP surface is
@@ -34,23 +34,22 @@ health/ping (below).
 
 Selected at runtime by `wsa.storage` (env `WSA_STORAGE`). The matching DB
 auto-configuration is gated by an `AutoConfigurationImportFilter`
-(`MongoStorageAutoConfigurationFilter`, `PostgresStorageAutoConfigurationFilter`,
-registered in `META-INF/spring.factories`), so a non-matching mode opens **no**
-connection to that database.
+(`PostgresStorageAutoConfigurationFilter`, registered in
+`META-INF/spring.factories`), so a non-matching mode opens **no** connection to
+that database.
 
 | `wsa.storage` | Adapter | What it does |
 |---------------|---------|--------------|
 | `inmemory` (default) | `InMemoryEventStore` | `ConcurrentHashMap` keyed by `eventId`; `putIfAbsent` (first-write-wins). No external deps. |
-| `mongo` | `MongoEventStore` | Writes the shared `wsa.events` collection; `_id = eventId` so `save()` is an idempotent upsert. Creates the three indexes on startup (`@PostConstruct`). |
 | `postgres` | `PostgresEventStore` | JDBC batch insert into the shared `wsa.events` table with `INSERT ... ON CONFLICT (event_id) DO NOTHING` (first-write-wins). Runs the DDL on startup (`@PostConstruct`). |
 
-event-store **owns** schema/index creation (Mongo indexes and Postgres DDL) and
-is the **sole writer**; analytics reads the same store **read-only** (a stand-in
-for a read replica). The shared document/table shape is a cross-service contract
-— see the "Shared Mongo `events` collection" and "Shared Postgres `events`
-table" sections in [`../contracts/.claude/context.md`](../contracts/.claude/context.md).
-Indexes created either way: `{configId, timestamp desc}`, `{clientIp, timestamp
-desc}`, `{timestamp desc}`.
+event-store **owns** schema/index creation (Postgres DDL) and is the **sole
+writer**; analytics reads the same store **read-only** (a stand-in for a read
+replica). The shared table shape is a cross-service contract — see the "Shared
+Postgres `events` table" section in
+[`../contracts/.claude/context.md`](../contracts/.claude/context.md).
+Indexes created: `{configId, timestamp desc}`, `{clientIp, timestamp desc}`,
+`{timestamp desc}`.
 
 ## Configuration
 
@@ -60,27 +59,18 @@ desc}`, `{timestamp desc}`.
 | `spring.kafka.bootstrap-servers` (`KAFKA_BOOTSTRAP_SERVERS`) | `localhost:9092` | Kafka brokers |
 | `wsa.topics.enriched` | `events.enriched` | source topic |
 | `wsa.consumer-group` | `event-store` | consumer group id |
-| `wsa.storage` (`WSA_STORAGE`) | `inmemory` | `inmemory` \| `mongo` \| `postgres` |
-| `SPRING_DATA_MONGODB_URI` | — | required when `wsa.storage=mongo` (e.g. `mongodb://localhost:27017/wsa`) |
+| `wsa.storage` (`WSA_STORAGE`) | `inmemory` | `inmemory` \| `postgres` |
 | `SPRING_DATASOURCE_URL` | — | required when `wsa.storage=postgres` (e.g. `jdbc:postgresql://localhost:5432/wsa`) |
 | `SPRING_DATASOURCE_USERNAME` / `SPRING_DATASOURCE_PASSWORD` | — | Postgres credentials |
 
-Runtime dependencies: **Kafka always**; **Mongo** only when
-`wsa.storage=mongo`; **Postgres** only when `wsa.storage=postgres`.
+Runtime dependencies: **Kafka always**; **Postgres** only when
+`wsa.storage=postgres`.
 
 ## Run standalone
 
 Needs a reachable Kafka broker. Defaults to in-memory storage (no DB needed):
 
 ```bash
-mvn -pl services/event-store spring-boot:run
-```
-
-Against Mongo:
-
-```bash
-WSA_STORAGE=mongo \
-SPRING_DATA_MONGODB_URI=mongodb://localhost:27017/wsa \
 mvn -pl services/event-store spring-boot:run
 ```
 
@@ -99,9 +89,9 @@ mvn -pl services/event-store spring-boot:run
 mvn -pl services/event-store -am test
 ```
 
-The Mongo and Postgres adapter integration tests (`MongoEventStoreIntegrationTest`,
-`PostgresEventStoreIT`) and the end-to-end `EnrichedEventListenerIntegrationTest`
-use **Testcontainers** and need a running **Docker** daemon.
+The Postgres adapter integration test (`PostgresEventStoreIT`) and the
+end-to-end `EnrichedEventListenerIntegrationTest` use **Testcontainers** and need
+a running **Docker** daemon.
 
 ## Internal layout
 
@@ -116,10 +106,9 @@ interfaces/
   messaging/        EnrichedEventListener (@KafkaListener on events.enriched)
   rest/             PingController (/v1/ping)
 infrastructure/
-  config/           KafkaConsumerConfig, Mongo/Postgres AutoConfigurationImportFilters
+  config/           KafkaConsumerConfig, Postgres AutoConfigurationImportFilter
   persistence/
     inmemory/       InMemoryEventStore
-    mongo/          MongoEventStore, StoredEventDocument, StoredEventDocumentMapper
     postgres/       PostgresEventStore
 ```
 
@@ -132,7 +121,7 @@ to keep in mind:
 - **`EnrichedEventMessage` is nested** — the original event fields live under
   `.rawEvent()` (e.g. `msg.rawEvent().configId()`), alongside the top-level
   `attackType` (String display name), `threatScore` (int 0–100), `receivedAt`.
-- The **shared store schema** (Mongo `events` collection / Postgres `events`
-  table, both in database `wsa`) is a cross-service contract co-owned with
-  analytics; event-store creates it, analytics reads it. Change it in contracts
-  and log it in that module's `CHANGELOG.md`.
+- The **shared store schema** (Postgres `events` table in database `wsa`) is a
+  cross-service contract co-owned with analytics; event-store creates it,
+  analytics reads it. Change it in contracts and log it in that module's
+  `CHANGELOG.md`.

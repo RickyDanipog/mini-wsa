@@ -12,6 +12,11 @@ are machine-bound — read the **ratios and the shape**, not the raw figures.
 - **Metrics:** *drain* = feed-done → all 100k persisted (store write throughput); *end-to-end* = feed-start → all persisted; query latency via `ab -n 300 -c 10` on `/v1/stats/summary` (the 4-way aggregation) and `/v1/events/samples?limit=20`.
 - Reused the **real adapters** behind the ports — no throwaway benchmark path.
 
+> **Reproducing.** The full two-backend harness (`docker-compose.sweep.yml` with
+> partition/replica parameters, `docker-compose.postgres.yml`, and the driver
+> scripts) is preserved on the **`candidate/mongo-store`** branch, which still
+> carries both adapters. `main` ships Postgres only.
+
 ## Part A — 100k baseline, single instance (medians of 3 runs)
 
 | Metric | Mongo | Postgres | Advantage |

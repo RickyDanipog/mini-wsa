@@ -1,3 +1,2 @@
 org.springframework.boot.autoconfigure.AutoConfigurationImportFilter=\
-com.akamai.wsa.eventstore.infrastructure.config.MongoStorageAutoConfigurationFilter,\
 com.akamai.wsa.eventstore.infrastructure.config.PostgresStorageAutoConfigurationFilter

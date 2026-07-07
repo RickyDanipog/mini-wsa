@@ -5,13 +5,13 @@ The last hop of the Mini WSA pipeline. It reads the shared event store
 threat statistics and filtered, paginated event samples. It does **not** consume
 Kafka and it never writes — event-store is the sole writer.
 
-Pipeline position: `enrichment → event-store → shared store (Mongo | Postgres) → `**`analytics`**` read APIs`.
+Pipeline position: `enrichment → event-store → shared store (Postgres) → `**`analytics`**` read APIs`.
 
 ## Responsibilities
 
 - Expose `GET /v1/stats/summary` — totals, per-category / per-action breakdowns, top attackers and top targeted paths for an optional config + time window.
 - Expose `GET /v1/events/samples` — the raw enriched events behind the numbers, filtered and paginated, newest first.
-- Aggregate identically across three interchangeable read adapters (in-memory, Mongo, Postgres) behind one `AnalyticsReadStore` port — same grouping, sorting, and top-N (capped at 10) semantics regardless of store.
+- Aggregate identically across two interchangeable read adapters (in-memory, Postgres) behind one `AnalyticsReadStore` port — same grouping, sorting, and top-N (capped at 10) semantics regardless of store.
 - Run **fully standalone** in the default `inmemory` mode with seeded demo data, so the read surface can be demoed with zero external dependencies.
 
 ## Entry points
@@ -65,15 +65,14 @@ aggregation logic runs unchanged over each backend.
 
 | Property / env | Default | Notes |
 |----------------|---------|-------|
-| `wsa.storage` | `inmemory` | `inmemory` \| `mongo` \| `postgres` |
-| `SPRING_DATA_MONGODB_URI` | — | Mongo connection (only when `wsa.storage=mongo`) |
+| `wsa.storage` | `inmemory` | `inmemory` \| `postgres` |
 | `SPRING_DATASOURCE_URL` | — | JDBC URL (only when `wsa.storage=postgres`); pair with `SPRING_DATASOURCE_USERNAME` / `SPRING_DATASOURCE_PASSWORD` |
 
 In the default `inmemory` mode the store is populated with 15 seeded demo events
 via `DevDataSeed` — the service is fully self-contained and needs nothing but the
-JVM, which makes it ideal for a quick standalone demo. In `mongo` / `postgres`
-mode it reads the **same** `events` collection / table that event-store writes
-(Mongo/Postgres auto-config is filtered out unless the matching mode is active).
+JVM, which makes it ideal for a quick standalone demo. In `postgres`
+mode it reads the **same** `events` table that event-store writes
+(Postgres auto-config is filtered out unless the matching mode is active).
 
 ## Run standalone
 
@@ -89,10 +88,6 @@ curl -s "localhost:8084/v1/events/samples?limit=5"
 Point it at a real shared store instead:
 
 ```bash
-# MongoDB
-SPRING_DATA_MONGODB_URI="mongodb://localhost:27017/wsa" \
-  mvn -pl services/analytics spring-boot:run -Dspring-boot.run.arguments="--wsa.storage=mongo"
-
 # PostgreSQL
 SPRING_DATASOURCE_URL="jdbc:postgresql://localhost:5432/wsa" \
 SPRING_DATASOURCE_USERNAME=wsa SPRING_DATASOURCE_PASSWORD=wsa \
@@ -105,8 +100,8 @@ SPRING_DATASOURCE_USERNAME=wsa SPRING_DATASOURCE_PASSWORD=wsa \
 mvn -pl services/analytics -am test
 ```
 
-Unit tests (controllers, in-memory store) run with no infrastructure. The Mongo
-and Postgres adapter tests are **Testcontainers** integration tests and require
+Unit tests (controllers, in-memory store) run with no infrastructure. The
+Postgres adapter test is a **Testcontainers** integration test and requires
 **Docker** to be running.
 
 ## Internal layout
@@ -122,21 +117,20 @@ domain/port            AnalyticsReadStore (the query port)
 domain/query           StatisticsQuery/Summary, SampleQuery, EventSamplesPage,
                        Category/Attacker/Path statistics, TimeRange
 infrastructure/persistence/inmemory   InMemoryAnalyticsReadStore (seeded)
-infrastructure/persistence/mongo      MongoAnalyticsReadStore (+ EnrichedEventDocument)
 infrastructure/persistence/postgres   PostgresAnalyticsReadStore
-infrastructure/config  ReadStoreConfiguration (the three @Beans) + Mongo/Postgres
-                       auto-config import filters
+infrastructure/config  ReadStoreConfiguration (the two @Beans) + Postgres
+                       auto-config import filter
 infrastructure/seed    DevDataSeed (demo data for inmemory mode)
 ```
 
-All three adapters implement the same `summarize` / `findSamples` contract with
+Both adapters implement the same `summarize` / `findSamples` contract with
 identical aggregation semantics (group + count + average, top-10 ordered by
 count then key, samples by `timestamp` DESC) — only the query mechanism differs.
 
 ## Contracts
 
 The shared store schema this service reads lives in
-[`../contracts`](../contracts) (the `wsa.events` Mongo collection and the
-`events` Postgres table). Analytics is a strict **READ-ONLY** consumer of that
+[`../contracts`](../contracts) (the `events` Postgres table). Analytics is a
+strict **READ-ONLY** consumer of that
 schema: event-store owns writes and index creation, analytics only queries. When
 the contract moves, re-check this service against it.

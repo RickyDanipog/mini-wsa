@@ -8,7 +8,7 @@ query — not the UI. Akamai CSI backend take-home.
 The pipeline is built as **five small services connected by Kafka**, each
 hexagonal internally (pure domain, ports, swappable adapters). Storage is chosen
 per service at runtime via a single `wsa.storage` switch — the same business
-logic runs unchanged over in-memory, MongoDB, Redis, or PostgreSQL.
+logic runs unchanged over in-memory or PostgreSQL, with Redis for the offender window.
 
 ## Architecture
 
@@ -18,7 +18,7 @@ logic runs unchanged over in-memory, MongoDB, Redis, or PostgreSQL.
                              validate                    classify + score                  persist
                              publish                     offender window                     │
                                                           (in-memory | Redis)                 ▼
-                                                                                    shared store (Mongo | Postgres)
+                                                                                    shared store (PostgreSQL)
                                                                                               ▲
                                                                                         analytics :8084
                                                                                     /stats/summary, /events/samples
@@ -40,7 +40,7 @@ for cross-service shapes. Design detail: [`docs/03-sdd.md`](docs/03-sdd.md).
 ## Tech stack
 
 Java 21 · Spring Boot 3.3 · Maven (multi-module reactor) · Apache Kafka (KRaft) ·
-MongoDB · Redis · PostgreSQL · Docker Compose · JUnit 5 + Testcontainers.
+Redis · PostgreSQL · Docker Compose · JUnit 5 + Testcontainers.
 
 ## Build & run
 
@@ -50,7 +50,7 @@ Prerequisites: **JDK 21**, **Maven**, **Docker** (for Compose and the integratio
 # build everything + run all tests (unit + Testcontainers integration)
 mvn clean verify
 
-# bring up the full pipeline (Kafka + Mongo + Redis + all 4 services)
+# bring up the full pipeline (Kafka + Postgres + Redis + all 4 services)
 docker compose up --build
 
 # tail one service
@@ -267,25 +267,36 @@ running in a non-matching mode opens **no** connection to that database.
 | `wsa.storage` | enrichment (offender window) | event-store / analytics (event store) |
 |---------------|------------------------------|----------------------------------------|
 | `inmemory` (default) | in-memory sliding window | in-memory map |
-| `mongo` | in-memory window | shared Mongo `events` collection |
-| `redis` | Redis sorted-set window + dedup | (pairs with mongo/postgres for the store) |
+| `redis` | Redis sorted-set window + dedup | (pairs with postgres for the store) |
 | `postgres` | in-memory window | shared Postgres `events` table |
 
 The default Compose stack runs enrichment on **Redis** and event-store +
-analytics on **Mongo** (event-store is the sole writer; analytics reads the same
-collection read-only, standing in for a read replica). Point a service at
+analytics on **PostgreSQL** (event-store is the sole writer; analytics reads the
+same table read-only, standing in for a read replica). Point a service at
 another backend with env vars, e.g.
-`WSA_STORAGE=postgres SPRING_DATASOURCE_URL=jdbc:postgresql://…` or
-`WSA_STORAGE=mongo SPRING_DATA_MONGODB_URI=mongodb://…`.
+`WSA_STORAGE=postgres SPRING_DATASOURCE_URL=jdbc:postgresql://…`.
 
 ### Why this storage stack
 
-> **⏳ To be completed after the `/profile-storage` benchmark.** This section
-> will present the head-to-head results (ingest throughput and stats-query
-> latency for Mongo vs. Postgres at 10k/100k events, plus the scaling sweep over
-> service replicas and Kafka partitions) and the final justification grounded in
-> those numbers. The adapters and the benchmark harness are in place; the
-> measured comparison is the remaining input.
+PostgreSQL was chosen **after benchmarking it head-to-head against MongoDB** —
+both were implemented behind the same ports and driven with an identical seeded
+100k-event workload (full method + results in
+[`docs/storage-benchmark.md`](docs/storage-benchmark.md)).
+
+| Metric (100k, medians) | MongoDB | PostgreSQL |
+|---|--:|--:|
+| `/v1/stats/summary` p95 (aggregation) | 1,468 ms | **431 ms** (3.4×) |
+| `/v1/events/samples` p95 | 106 ms | **36 ms** (2.9×) |
+| Write persist rate | 1,104 ev/s | **1,302 ev/s** (1.18×) |
+
+For this aggregation-heavy analytics workload, a relational store with
+`(config_id, timestamp)` / `(client_ip, timestamp)` indexes beat Mongo's
+aggregation pipeline by ~3× on the query hot path and ~18% on writes, and it
+scales with Kafka partitions + consumer replicas up to a measured **~2,200 ev/s
+knee** (4 replicas / 4 partitions) before the single host becomes CPU-bound.
+**Redis** stays for the enrichment offender window — a sliding-window counter, a
+different concern from the event store. The Mongo adapter and the full benchmark
+harness are preserved on the `candidate/mongo-store` branch.
 
 ## Data generator
 
@@ -308,8 +319,8 @@ mvn -pl services/event-generator spring-boot:run \
 
 - **Unit tests** cover the scoring matrix and classification edge cases (the
   explicitly-graded deterministic logic) and the analytics aggregations.
-- **Integration tests** use **Testcontainers** against real Mongo / Redis /
-  Postgres, so adapter behavior is verified against the actual engines rather
+- **Integration tests** use **Testcontainers** against real Postgres / Redis,
+  so adapter behavior is verified against the actual engines rather
   than mocks. They require a running Docker daemon; `mvn verify` runs them.
 - Cross-service serialization is exercised end-to-end (gateway → enrichment →
   event-store) over an embedded broker.
@@ -341,8 +352,7 @@ docs/               requirements, effort estimate, SDD
   is a dead-letter topic with bounded retries and a small requeue/inspect path,
   so one malformed event can't stall a partition.
 - **Idempotency at the edge.** De-duplication today relies on the event-store's
-  write being keyed by `eventId` (in-memory and Postgres are first-write-wins;
-  Mongo upserts on the same key). A duplicate detected
+  write being keyed by `eventId` (first-write-wins). A duplicate detected
   at ingest — or an explicit idempotency key — would save the wasted enrichment
   and Kafka round-trip.
 - **Schema Registry + Avro.** Messages are JSON for now. Moving the contracts to
@@ -360,16 +370,16 @@ docs/               requirements, effort estimate, SDD
 - **Keeping the domain pure while swapping databases.** The interesting design
   work was making one scoring/analytics implementation run unchanged over four
   storage backends. Getting the auto-configuration gating right — so a service
-  in `inmemory` mode makes *zero* attempts to reach Mongo or a DataSource — took
-  an `AutoConfigurationImportFilter` per database rather than the simpler
+  in `inmemory` mode makes *zero* attempts to reach a database it isn't
+  configured for — took an `AutoConfigurationImportFilter` rather than the simpler
   `spring.autoconfigure.exclude`, which cannot be cleared by an environment
   variable at runtime.
 - **Closing the analytics loop across processes.** Splitting into services means
   analytics can't just read enrichment's memory. The fix was a shared store
   contract (event-store writes, analytics reads the same collection/table) —
-  which then had to produce identical aggregation results whether backed by
-  Mongo's aggregation pipeline, a SQL `GROUP BY`, or the in-memory reference
-  implementation, tie-breaks included.
+  which then had to produce identical aggregation results whether backed by a
+  SQL `GROUP BY` or the in-memory reference implementation (and, during the
+  storage evaluation, Mongo's aggregation pipeline) — tie-breaks included.
 - **Deterministic scoring with a stateful rule.** The repeat-offender bonus is a
   read-during-write against a sliding window — easy in memory, but it is exactly
   the part with real performance implications at scale, which is why it sits
