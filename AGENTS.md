@@ -63,8 +63,10 @@ WSA/
 - Services communicate only via **Kafka topics** (write path) and the shared
   **`contracts`** module (schemas) — never by importing each other's internals.
   Read path: `analytics` reads a Mongo replica of `event-store`'s data.
-- Transitional: the `mini-wsa` module still exists until its code is relocated
-  (restructure plan Task 5), then it is deleted.
+- The `mini-wsa` monolith has been retired (Phase 0 Task 5); its enums live in
+  `contracts` and each service owns its domain. A thin end-to-end pipeline runs
+  over Kafka; per-service business logic is implemented next from each service's
+  `.claude/plans/plan.md`.
 
 ---
 
