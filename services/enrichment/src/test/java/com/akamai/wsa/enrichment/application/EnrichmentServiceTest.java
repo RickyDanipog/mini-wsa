@@ -16,8 +16,6 @@ import com.akamai.wsa.enrichment.domain.service.ThreatScoreCalculator;
 import com.akamai.wsa.enrichment.infrastructure.dedup.InMemoryProcessedEventLog;
 import com.akamai.wsa.enrichment.infrastructure.rules.InMemoryScoringRuleRepository;
 import com.akamai.wsa.enrichment.infrastructure.window.InMemoryOffenderWindow;
-import com.akamai.wsa.enrichment.ruleengine.RuleEngine;
-import com.akamai.wsa.enrichment.ruleengine.RuleEvaluator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -35,8 +33,7 @@ class EnrichmentServiceTest {
 
     private final Clock fixedClock = Clock.fixed(FIXED_NOW, ZoneOffset.UTC);
     private final ScoringRuleRepository scoringRuleRepository = new InMemoryScoringRuleRepository();
-    private final ThreatScoreCalculator calculator = new RuleEngineThreatScoreCalculator(
-            scoringRuleRepository, new RuleEngine(new RuleEvaluator()));
+    private final ThreatScoreCalculator calculator = new RuleEngineThreatScoreCalculator(scoringRuleRepository);
 
     private OffenderWindow offenderWindow;
     private ProcessedEventLog processedEventLog;

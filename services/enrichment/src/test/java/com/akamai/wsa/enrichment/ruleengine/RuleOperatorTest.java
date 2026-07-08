@@ -6,12 +6,10 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-class RuleEvaluatorTest {
-
-    private final RuleEvaluator ruleEvaluator = new RuleEvaluator();
+class RuleOperatorTest {
 
     private boolean matches(Map<String, Object> facts, String factKey, RuleOperator operator, String operand) {
-        return ruleEvaluator.matches(facts, new RuleCondition(factKey, operator, operand));
+        return new RuleCondition(factKey, operator, operand).matches(facts);
     }
 
     @Test

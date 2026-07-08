@@ -31,8 +31,10 @@ gateway → events.raw → enrichment → events.enriched → event-store (Postg
 Scoring runs on a **subject-agnostic rule engine** (`ruleengine`), not on
 hand-written scoring classes. The engine is generic: a `Rule<T>` carries a
 `type` discriminator, a `RuleCondition(factKey, operator, operand)`, and an
-`output`; `RuleEvaluator` tests one condition against a fact map and
-`RuleEngine` returns the enabled rules that match. Scoring is simply **one
+`output`; each `RuleCondition` tests itself against a fact map (via
+`RuleOperator`), and a stateful `RuleEngine` — loaded with rules, then asked to
+`matching(facts)` / `evaluate(facts)` — returns the enabled rules that match.
+Scoring is simply **one
 usage** of it — rules of `type = "SCORING"` whose `output` is the points value —
 so the same engine is reusable for other rule `type`s.
 
@@ -104,7 +106,7 @@ Spring/Kafka/Redis — pure classes wired to beans in
 `infrastructure/config/EnrichmentConfiguration`.
 
 ```
-ruleengine/       RuleOperator, RuleCondition, Rule<T>, RuleEvaluator, RuleEngine (subject-agnostic)
+ruleengine/       RuleOperator, RuleCondition, Rule<T>, RuleEngine (stateful; subject-agnostic)
 domain/
   model/          AttackType, ThreatScore (capped value object)
   port/           OffenderWindow, ProcessedEventLog, ScoringRuleRepository (driven ports)

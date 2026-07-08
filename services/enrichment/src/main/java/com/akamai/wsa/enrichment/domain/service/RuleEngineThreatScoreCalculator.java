@@ -10,16 +10,15 @@ import java.util.Map;
 public final class RuleEngineThreatScoreCalculator implements ThreatScoreCalculator {
 
     private final ScoringRuleRepository scoringRuleRepository;
-    private final RuleEngine ruleEngine;
 
-    public RuleEngineThreatScoreCalculator(ScoringRuleRepository scoringRuleRepository, RuleEngine ruleEngine) {
+    public RuleEngineThreatScoreCalculator(ScoringRuleRepository scoringRuleRepository) {
         this.scoringRuleRepository = scoringRuleRepository;
-        this.ruleEngine = ruleEngine;
     }
 
     @Override
     public ThreatScore calculate(Map<String, Object> facts) {
-        int total = ruleEngine.matchingRules(facts, scoringRuleRepository.findEnabledRules()).stream()
+        RuleEngine<Integer> engine = new RuleEngine<>(scoringRuleRepository.findEnabledRules());
+        int total = engine.matching(facts).stream()
                 .mapToInt(Rule::output)
                 .sum();
         return ThreatScore.ofCapped(total);

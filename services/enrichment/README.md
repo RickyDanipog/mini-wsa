@@ -24,7 +24,8 @@ See the root [`../../README.md`](../../README.md) for the full architecture.
 Scoring is additive and capped at 100, but it is no longer hand-written Java
 classes. It runs on a **subject-agnostic rule engine** (`ruleengine`:
 `RuleOperator`, `RuleCondition(factKey, operator, operand)`, a generic
-`Rule<T>` carrying a `type` discriminator, `RuleEvaluator`, `RuleEngine`).
+`Rule<T>` carrying a `type` discriminator, and a stateful `RuleEngine` you load
+rules into and evaluate — matching lives on `RuleOperator`/`RuleCondition`).
 Scoring is just one **usage** of that engine — rules of `type = "SCORING"`
 whose `output` is the points value. `EnrichmentService` builds a fact map
 (`severity, action, category, path, method, statusCode, clientIp,
@@ -152,7 +153,7 @@ Hexagonal packages under `com.akamai.wsa.enrichment`:
 
 ```
 ruleengine/       RuleOperator, RuleCondition, Rule<T> (type-tagged),
-                  RuleEvaluator, RuleEngine (subject-agnostic)
+                  RuleEngine (stateful; subject-agnostic)
 domain/
   model/          AttackType, ThreatScore (capped value object)
   port/           OffenderWindow, ProcessedEventLog, ScoringRuleRepository (driven ports)
