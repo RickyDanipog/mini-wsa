@@ -36,9 +36,25 @@ public class PostgresScoringRuleRepository implements ScoringRuleRepository {
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """;
 
+    private static final String UPSERT_STATEMENT = """
+            INSERT INTO rules (id, type, title, fact_key, operator, operand, output, priority, enabled)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (id) DO UPDATE SET
+                type = EXCLUDED.type, title = EXCLUDED.title, fact_key = EXCLUDED.fact_key,
+                operator = EXCLUDED.operator, operand = EXCLUDED.operand, output = EXCLUDED.output,
+                priority = EXCLUDED.priority, enabled = EXCLUDED.enabled
+            """;
+
+    private static final String DELETE_STATEMENT = "DELETE FROM rules WHERE id = ?";
+
     private static final String FIND_ENABLED_STATEMENT = """
             SELECT id, type, title, fact_key, operator, operand, output, priority, enabled
             FROM rules WHERE type = ? AND enabled = true ORDER BY priority
+            """;
+
+    private static final String FIND_ALL_STATEMENT = """
+            SELECT id, type, title, fact_key, operator, operand, output, priority, enabled
+            FROM rules WHERE type = ? ORDER BY priority
             """;
 
     private final JdbcTemplate jdbcTemplate;
@@ -78,6 +94,26 @@ public class PostgresScoringRuleRepository implements ScoringRuleRepository {
     @Override
     public List<Rule<Integer>> findEnabledRules() {
         return jdbcTemplate.query(FIND_ENABLED_STATEMENT, scoringRuleRowMapper, SCORING_TYPE);
+    }
+
+    @Override
+    public List<Rule<Integer>> findAll() {
+        return jdbcTemplate.query(FIND_ALL_STATEMENT, scoringRuleRowMapper, SCORING_TYPE);
+    }
+
+    @Override
+    public Rule<Integer> save(Rule<Integer> rule) {
+        RuleCondition condition = rule.condition();
+        jdbcTemplate.update(UPSERT_STATEMENT,
+                rule.id(), rule.type(), rule.title(), condition.factKey(),
+                condition.operator().name(), condition.operand(), Integer.toString(rule.output()),
+                rule.priority(), rule.enabled());
+        return rule;
+    }
+
+    @Override
+    public void deleteById(String id) {
+        jdbcTemplate.update(DELETE_STATEMENT, id);
     }
 
     private static final class ScoringRuleRowMapper implements RowMapper<Rule<Integer>> {

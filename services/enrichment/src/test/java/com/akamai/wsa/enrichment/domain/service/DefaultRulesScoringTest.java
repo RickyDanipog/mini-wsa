@@ -22,6 +22,30 @@ class DefaultRulesScoringTest {
     private final ThreatScoreCalculator calculator = new RuleEngineThreatScoreCalculator(
             new InMemoryScoringRuleRepository());
 
+    private static ScoringRuleRepository repositoryReturning(List<Rule<Integer>> rules) {
+        return new ScoringRuleRepository() {
+            @Override
+            public List<Rule<Integer>> findEnabledRules() {
+                return rules;
+            }
+
+            @Override
+            public List<Rule<Integer>> findAll() {
+                return rules;
+            }
+
+            @Override
+            public Rule<Integer> save(Rule<Integer> rule) {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public void deleteById(String id) {
+                throw new UnsupportedOperationException();
+            }
+        };
+    }
+
     private Facts facts(String severity, String action, String path, long offenderEventCount) {
         return facts(severity, action, path, offenderEventCount, null);
     }
@@ -88,11 +112,11 @@ class DefaultRulesScoringTest {
 
     @Test
     void totalIsCappedAtOneHundred() {
-        ScoringRuleRepository inflatedRepository = () -> List.of(
+        ScoringRuleRepository inflatedRepository = repositoryReturning(List.of(
                 new Rule<>("big", ScoringRuleRepository.SCORING_TYPE, "Big", 10, true,
                         new RuleCondition(FactKey.SEVERITY, RuleOperator.EQUAL_TO, "CRITICAL"), 70),
                 new Rule<>("bigger", ScoringRuleRepository.SCORING_TYPE, "Bigger", 20, true,
-                        new RuleCondition(FactKey.ACTION, RuleOperator.EQUAL_TO, "DENY"), 50));
+                        new RuleCondition(FactKey.ACTION, RuleOperator.EQUAL_TO, "DENY"), 50)));
         ThreatScoreCalculator overflowing = new RuleEngineThreatScoreCalculator(inflatedRepository);
 
         int total = overflowing.calculate(facts("CRITICAL", "DENY", "/x", 0)).value();
@@ -102,13 +126,10 @@ class DefaultRulesScoringTest {
 
     @Test
     void nestedGeoCountryRuleContributesThroughDottedPath() {
-        ScoringRuleRepository withGeoRule = () -> {
-            List<Rule<Integer>> rules = new ArrayList<>(DefaultScoringRules.asList());
-            rules.add(new Rule<>("geo-cn", ScoringRuleRepository.SCORING_TYPE, "China origin", 50, true,
-                    new RuleCondition(FactKey.GEO_COUNTRY, RuleOperator.EQUAL_TO, "CN"), 5));
-            return rules;
-        };
-        ThreatScoreCalculator withGeo = new RuleEngineThreatScoreCalculator(withGeoRule);
+        List<Rule<Integer>> rules = new ArrayList<>(DefaultScoringRules.asList());
+        rules.add(new Rule<>("geo-cn", ScoringRuleRepository.SCORING_TYPE, "China origin", 50, true,
+                new RuleCondition(FactKey.GEO_COUNTRY, RuleOperator.EQUAL_TO, "CN"), 5));
+        ThreatScoreCalculator withGeo = new RuleEngineThreatScoreCalculator(repositoryReturning(rules));
 
         int withoutCountry = withGeo.calculate(facts("LOW", "MONITOR", "/x", 0, null)).value();
         int withChina = withGeo.calculate(facts("LOW", "MONITOR", "/x", 0, "CN")).value();
