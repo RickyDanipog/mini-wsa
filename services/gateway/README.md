@@ -53,7 +53,7 @@ root README's API reference for the full request schema and error shape.
 
 ### Kafka
 
-Ingestion has two inbound adapters over one shared `IngestEvents` use case: the
+Ingestion has two inbound adapters over one shared `EventIngestionService`: the
 REST endpoint above and a Kafka listener.
 
 - **Inbound (listener):** `@KafkaListener` on topic **`events.ingest`**, consumer

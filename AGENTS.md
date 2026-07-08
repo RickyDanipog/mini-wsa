@@ -51,7 +51,7 @@ WSA/
 ├── AGENTS.md                  ← you are here
 ├── README.md                  ← assignment-facing (build/run, API, architecture)
 ├── docs/                      ← requirements, SDD, storage benchmark
-├── docker-compose.yml         ← full stack: kafka + postgres + redis + the 4 services
+├── docker-compose.yml         ← full stack: kafka + postgres + redis + the 4 services + demo-ui console (:8090)
 ├── pom.xml                    ← root Maven aggregator / parent
 └── services/
     ├── contracts/             ← shared Kafka message schemas + envelope (no runtime)
@@ -96,9 +96,11 @@ com.akamai.wsa.<service>
 │   ├── service/               ← stateless domain services (the graded logic)
 │   └── port/                  ← outbound ports (repository interfaces) OWNED by the domain
 │
-├── application/               ← use cases: orchestrate domain + ports. Thin.
-│   ├── ingest/  · stats/  · samples/
-│   └── (command/query models, application services)
+├── application/               ← domain services, grouped by subject/model. Thin;
+│   │                            orchestrate domain + ports; hold no business rules.
+│   └── plain @Service classes with ordinary method params — e.g.
+│       EventIngestionService, EnrichmentService, ScoringRuleService,
+│       AnalyticsQueryService, AlertService. No UseCase/execute, no Command records.
 │
 ├── infrastructure/            ← outbound adapters (implement domain ports)
 │   ├── persistence/<engine>/  ← EventStore + OffenderWindow impls, storage entities, mappers, migrations
@@ -132,12 +134,18 @@ We stay close to DDD. Concretely:
   driven by a subject-agnostic rule engine (`ruleengine`: `RuleOperator`,
   `RuleCondition`, generic `Rule<T>`, `RuleEngine`); scoring rules are data
   (`type='SCORING'` rows), not code. Business rules live here, not in controllers.
-- **Ports (domain-owned interfaces), two of them:** `EventStore` (`saveAll`,
-  `countAll`, `findByConfigId`, and later `summarize`, `findSamples`) and
-  `OffenderWindow` (`countRecentEventsFromClient`) — named in the ubiquitous
-  language, not in storage terms.
-- **Application services** orchestrate a single use case each; they are thin and
-  hold no business rules.
+- **Ports (domain-owned interfaces), named in the ubiquitous language, not in
+  storage terms:** `EventStore` (event-store — persist/read the system of
+  record), `AnalyticsReadStore` (analytics — `summarize`, `findSamples`,
+  `timeSeries`, `countByCategoryWithin`), `OffenderWindow` (enrichment —
+  `recordEvent`, `countRecentEventsFromClient`), `ScoringRuleRepository`
+  (enrichment — rule CRUD), `ProcessedEventLog` (enrichment — dedup),
+  `AlertRuleStore` (analytics — alert rules).
+- **Application services are grouped by the domain model / subject they serve**
+  (e.g. `ScoringRuleService`, `AnalyticsQueryService`, `AlertService`), expose
+  ordinary methods — **no `UseCase`/`execute` interface, no `Command` wrapper
+  records** — stay thin, and hold no business rules. Write methods take the
+  domain model itself (e.g. `ScoringRuleService.save(Rule<Integer>)`).
 - **No anemic domain model:** behavior lives with the data it concerns.
 - **Ubiquitous language everywhere** — see §5. Names in code == names in docs ==
   names we'd say to a SOC analyst.

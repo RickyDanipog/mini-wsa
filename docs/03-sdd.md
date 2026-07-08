@@ -157,12 +157,19 @@ analyst ─GET /v1/events/samples?...&limit&offset─▶ analytics
 Unchanged in substance from the earlier design, now owned by the enrichment service.
 
 ### 6.1 Classification & scoring
-`AttackTypeClassifier.classify(category)` → `AttackType`. `ThreatScoreCalculator`
-is a **pure** function built from composable **rule objects** (Logic 2):
-`SeverityRule` (40/30/20/10), `ActionRule` (20/10/0), `SensitivePathRule` (+15
-for `/admin`|`/login`), `RepeatOffenderRule` (+15), summed and **capped at 100**.
-The repeat-offender flag is injected via `ThreatScoringInputs`, keeping the
-scorer I/O-free and exhaustively unit-testable (graded logic).
+`AttackTypeClassifier.classify(category)` → `AttackType`. Scoring is a
+**data-driven rule engine** (`ruleengine` package): a scoring rule is a *row*,
+not a class — `(fact_key, operator, operand) → points` — evaluated against
+generic `Facts`, a dotted-path view over the event (`rule.severity`,
+`geoLocation.country`, `offenderEventCount`, …). `RuleEngineThreatScoreCalculator`
+sums the outputs of all matching enabled rules and **caps at 100**. Rules live
+behind the `ScoringRuleRepository` port (`wsa.rules=inmemory` built-in defaults,
+or `postgres` — a seeded `rules` table) and are re-read per event, so
+add/edit/disable via the enrichment `/v1/rules` API takes effect on the next
+event — no restart, no code change. The seeded defaults reproduce the assignment
+matrix: severity 40/30/20/10, action 20/10/0, sensitive path +15, repeat
+offender +15. Given `Facts`, the engine is I/O-free, keeping the graded scoring
+logic exhaustively unit-testable.
 
 ### 6.2 Repeat-offender window (Redis, owned by enrichment)
 Because enrichment no longer stores events itself (event-store does), the
@@ -227,11 +234,20 @@ that hurts) most decisively — so it ships and Mongo was retired to a branch.
 - **gateway (write):** `POST /v1/events/ingest` — single or array; bean-validated
   (required fields, enum binding, ISO-8601); **all-or-nothing** → `201
   {acceptedCount}` or `400 {error:{code,message,details[]}}`; mints correlationId
-  (`receivedAt` is stamped in enrichment on processing).
+  (`receivedAt` is stamped in enrichment on processing). The same ingestion core
+  also consumes the Kafka topic `events.ingest` (bonus B2) — a second inbound
+  adapter over `EventIngestionService`; invalid messages are logged and skipped.
+- **enrichment (rules):** `GET/POST/PUT/DELETE /v1/rules` (+ `GET
+  /v1/rules/options`) — CRUD over the scoring rules the engine evaluates;
+  changes apply on the next event. Operator/fact-key validated → `400 {details}`.
 - **analytics (read):** `GET /v1/stats/summary`, `GET /v1/events/samples`
-  (+ bonus `GET /v1/stats/timeseries`) — exact assignment JSON shapes, no
-  `{success,data}` envelope, pagination `limit` default 20 / max 100 + `offset` +
-  `total`.
+  (+ bonus B3 `GET /v1/stats/timeseries?interval={1m|5m|1h}`) — exact assignment
+  JSON shapes, no `{success,data}` envelope, pagination `limit` default 20 /
+  max 100 + `offset` + `total`.
+- **analytics (alerts, bonus B1):** `POST /v1/alerts/define` + `GET
+  /v1/alerts/evaluate` — threshold rules over category counts in a window.
+- **analytics (rate limit, bonus B4):** stats/samples endpoints return `429`
+  above the configured per-client-IP rate (`wsa.rate-limit`).
 
 ---
 
@@ -243,7 +259,10 @@ that hurts) most decisively — so it ships and Mongo was retired to a branch.
 - **Validation** happens once, at the gateway edge; downstream services trust
   the contract (and still guard domain invariants in value-object constructors).
 - **Error handling:** typed exceptions → `@RestControllerAdvice` at gateway/
-  analytics; Kafka consumers use a dead-letter topic for poison messages.
+  enrichment/analytics. Kafka consumers: the gateway `events.ingest` listener
+  logs-and-skips invalid payloads; duplicate `eventId`s are dropped in
+  enrichment via `ProcessedEventLog`. A dead-letter topic with bounded retries
+  is deliberately future work (see README "What I'd improve").
 - **Logging:** single-line structured logs with correlationId as the third arg.
 - **Config:** topic names, Redis URI, datasource URL, window size, thresholds,
   page caps in `application.yml` per service.
@@ -296,10 +315,13 @@ moves to a **columnar OLAP store (ClickHouse)** — still words-only, not built.
 
 ## 12. Deployment (`docker-compose`)
 
-Brings up: `kafka` (single-broker KRaft), `postgres`, `redis`, and the five service
+Brings up: `kafka` (single-broker KRaft), `postgres`, `redis`, the four service
 containers (`gateway:8081`, `enrichment:8082`, `event-store:8083`,
-`analytics:8084`, `event-generator` run on demand). Each service = its own Maven
-module + Dockerfile. `docker compose up` = the whole pipeline.
+`analytics:8084`; `event-generator` runs on demand), and `demo-ui:8090` — an
+nginx container serving the Simulation Console (a single-file dashboard that
+exercises every use case) and reverse-proxying `/api/{gateway,enrichment,analytics}/…`
+same-origin. Each service = its own Maven module + Dockerfile.
+`docker compose up` = the whole pipeline.
 
 ---
 

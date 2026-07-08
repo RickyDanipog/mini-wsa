@@ -56,8 +56,10 @@ The default rules reproduce the exact matrix below:
 
 Rules are **rows, not code**. They live in a shared `rules` table
 (`id, type, title, fact_key, operator, operand, output, priority, enabled`), so
-a reviewer adds, edits, or disables a scoring rule with a single SQL row — no
-code change, no rebuild. Scoring rows carry `type = 'SCORING'` and put the
+a user adds, edits, or disables a scoring rule at runtime through the
+`/v1/rules` REST API (or its editor panel in the Simulation Console at
+`localhost:8090`) — no code change, no rebuild, effective on the next event.
+Scoring rows carry `type = 'SCORING'` and put the
 points in `output`. Because facts are resolved by dotted path, the `fact_key`
 is just the path to any event field — nested fields included. Adding a "requests
 from China are worth 5 points" rule is one insert that references the nested
@@ -94,12 +96,31 @@ Redis per-IP sorted set under load.
 
 ## Entry points
 
-Kafka (the only functional interface):
+Kafka (the event path):
 
 - **Consumes** `events.raw` (`MessageEnvelope<RawEventMessage>`, keyed by `clientIp` upstream), consumer group `enrichment`, `auto-offset-reset=earliest`.
 - **Produces** `events.enriched` (`MessageEnvelope<EnrichedEventMessage>`, keyed by `configId`). The correlation id and `occurredAt` are carried through from the incoming envelope.
 
-HTTP (operational only):
+HTTP (scoring-rule management):
+
+- `GET /v1/rules` — list all scoring rules (enabled and disabled).
+- `GET /v1/rules/options` — the valid `operator` and `factKey` values.
+- `POST /v1/rules` — create a rule (`201`; blank/absent `id` → generated).
+- `PUT /v1/rules/{id}` — upsert a rule by id.
+- `DELETE /v1/rules/{id}` — remove a rule (`204`).
+
+```bash
+curl -X POST localhost:8082/v1/rules -H 'Content-Type: application/json' -d '{
+  "id": "geo-cn", "title": "China origin",
+  "factKey": "geoLocation.country", "operator": "EQUAL_TO", "operand": "CN",
+  "output": 5, "priority": 50, "enabled": true
+}'
+```
+
+Invalid `operator`/blank fields → `400 {error, details[]}`. Changes apply on the
+next event — the engine re-reads enabled rules per event.
+
+HTTP (operational):
 
 - `GET /actuator/health`, `/actuator/info` — Spring Boot Actuator.
 - `GET /v1/ping` → `{"status":"ok","service":"enrichment"}`.

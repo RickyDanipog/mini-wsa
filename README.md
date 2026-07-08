@@ -29,6 +29,7 @@ logic runs unchanged over in-memory or PostgreSQL, with Redis for the offender w
 - **[event-store](services/event-store)** — consumes `events.enriched` and persists the full record (sole writer, de-duplicated by `eventId`).
 - **[analytics](services/analytics)** — reads the same store read-only and serves aggregate stats + filtered, paginated samples.
 - **[event-generator](services/event-generator)** — a CLI that synthesizes realistic events and attack waves and feeds them to the gateway.
+- **demo-ui** (`localhost:8090`) — the **Simulation Console**: a single-file dashboard (nginx-served, same-origin proxied) that exercises every use case live — ingest, attack waves with a configurable inter-wave interval, custom-event crafting with score read-back, scoring-rule CRUD, stats/samples/time-series, alerts, and the rate limiter.
 
 Each service has its own README with entry points, configuration, and a
 standalone run command.
@@ -50,14 +51,17 @@ Prerequisites: **JDK 21**, **Maven**, **Docker** (for Compose and the integratio
 # build everything + run all tests (unit + Testcontainers integration)
 mvn clean verify
 
-# bring up the full pipeline (Kafka + Postgres + Redis + all 4 services)
+# bring up the full pipeline (Kafka + Postgres + Redis + 4 services + demo console)
 docker compose up --build
 
 # tail one service
 docker compose logs -f analytics
 ```
 
-Once the stack is up, the services listen on `:8081`–`:8084`. Health/liveness:
+Once the stack is up, open the **Simulation Console at http://localhost:8090** — a
+single-page dashboard that drives every use case (ingest, attack waves, custom-event
+scoring, live rule editing, stats/samples/time-series, alerts, rate limiting) with no
+curl. The services listen on `:8081`–`:8084`. Health/liveness:
 
 ```bash
 curl -s localhost:8081/actuator/health   # gateway   (repeat for 8082/8083/8084)
@@ -70,6 +74,26 @@ external deps needed):
 ```bash
 mvn -pl services/gateway spring-boot:run
 ```
+
+## Claude Code skills
+
+If you open this repo in [Claude Code](https://claude.com/claude-code), it ships
+a set of skills (under [`.claude/skills/`](.claude/skills)) so you can drive the
+whole project by name instead of remembering commands:
+
+| Skill | What it does |
+|-------|--------------|
+| `/prepare` | Detect & install prerequisites (Docker, JDK 21, Maven) — macOS. |
+| `/deploy` | Bring up the full stack **+ the Simulation Console**, wait for health, smoke-test. |
+| `/walkthrough` | Exercise every required part + bonus end-to-end and print a pass/fail checklist. |
+| `/generate` | Seed the running pipeline with realistic events and attack waves. |
+| `/add-rule` | Add a scoring rule, then ingest a matching event and show the threat score rise — live, no restart. |
+| `/reset` | Wipe all data volumes and bring the stack back up clean (optionally reseed). |
+| `/profile-storage` | Benchmark the storage candidates and find the scaling knee. |
+
+Typical first run: `/prepare` → `/deploy` → open `localhost:8090` (or `/walkthrough`
+to verify headlessly). These are plain Markdown — nothing to install, and they're
+ignored entirely if you don't use Claude Code.
 
 ## API reference
 
@@ -237,7 +261,9 @@ Scoring is deterministic and additive, capped at 100. It is driven by a small
 **data-driven rule engine** in the enrichment service: rules are rows (not code)
 of `type = "SCORING"` — `(fact_key, operator, operand) → points` — that the engine
 sums over the matched rules. The default rules reproduce the matrix below, and a
-reviewer can add/edit/disable one with a single SQL row (no code change). Storage
+user can add/edit/disable one at runtime via the enrichment **`/v1/rules`
+REST API** (or its editor panel in the Simulation Console) — the engine re-reads
+rules per event, so a change applies to the next event with no restart. Storage
 is `wsa.rules=inmemory` (the built-in defaults) or `postgres` (a seeded `rules`
 table). The engine itself is subject-agnostic — scoring is just one rule `type`.
 
@@ -356,7 +382,7 @@ examples in the owning service's README):
 
 - **B2 — Streaming ingestion.** In addition to REST, the gateway consumes events
   from the Kafka topic `events.ingest` (same validation, republished to
-  `events.raw`) — a second inbound adapter over one shared `IngestEvents` core.
+  `events.raw`) — a second inbound adapter over one shared `EventIngestionService`.
   Producer script: `scripts/produce-to-kafka.sh`. → [`services/gateway`](services/gateway)
 - **B3 — Time-series.** `GET /v1/stats/timeseries?interval={1m|5m|1h}` — event
   counts bucketed by interval. → [`services/analytics`](services/analytics)

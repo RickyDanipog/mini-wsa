@@ -12,9 +12,9 @@
 # What it does:
 #   1. Runs the event-generator in JSON_FILE mode to a temp file (a JSON array).
 #   2. Streams that array as one JSON object per line into the Kafka console
-#      producer inside the wsa-kafka container. Each line becomes one
-#      events.ingest message, which the gateway's EventIngestListener validates,
-#      maps, and republishes to events.raw — the same path as POST /v1/events/ingest.
+#     producer inside the wsa-kafka container. Each line becomes one
+#     events.ingest message, which the gateway's EventIngestListener validates,
+#     maps, and republishes to events.raw — the same path as POST /v1/events/ingest.
 #
 # Usage:
 #   scripts/produce-to-kafka.sh [count=200] [topic=events.ingest]
