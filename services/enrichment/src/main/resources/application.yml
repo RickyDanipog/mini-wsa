@@ -19,6 +19,7 @@ spring:
       value-serializer: org.apache.kafka.common.serialization.StringSerializer
 wsa:
   storage: inmemory
+  rules: inmemory
   topics:
     events-raw: events.raw
     events-enriched: events.enriched

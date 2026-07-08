@@ -58,11 +58,15 @@ services:
       args:
         MODULE: enrichment
     container_name: wsa-enrichment
-    depends_on: [kafka, redis]
+    depends_on: [kafka, redis, postgres]
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       WSA_STORAGE: redis
       SPRING_DATA_REDIS_HOST: redis
+      WSA_RULES: postgres
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/wsa
+      SPRING_DATASOURCE_USERNAME: wsa
+      SPRING_DATASOURCE_PASSWORD: wsa
     ports:
       - "8082:8082"
 

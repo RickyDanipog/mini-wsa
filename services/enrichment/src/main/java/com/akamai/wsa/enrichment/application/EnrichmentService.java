@@ -6,19 +6,18 @@ import com.akamai.wsa.enrichment.domain.port.OffenderWindow;
 import com.akamai.wsa.enrichment.domain.port.ProcessedEventLog;
 import com.akamai.wsa.enrichment.domain.service.AttackTypeClassifier;
 import com.akamai.wsa.enrichment.domain.service.ThreatScoreCalculator;
-import com.akamai.wsa.enrichment.domain.service.ThreatScoringInputs;
 import org.springframework.stereotype.Service;
 
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Map;
 import java.util.Optional;
 
 @Service
 public class EnrichmentService {
 
     static final Duration REPEAT_OFFENDER_WINDOW = Duration.ofMinutes(10);
-    static final int REPEAT_OFFENDER_THRESHOLD = 5;
 
     private final Clock clock;
     private final ProcessedEventLog processedEventLog;
@@ -45,13 +44,19 @@ public class EnrichmentService {
 
         Instant receivedAt = clock.instant();
         offenderWindow.recordEvent(rawEvent.clientIp(), receivedAt);
-        long recentCount = offenderWindow.countRecentEventsFromClient(
+        long offenderEventCount = offenderWindow.countRecentEventsFromClient(
                 rawEvent.clientIp(), REPEAT_OFFENDER_WINDOW, receivedAt);
-        boolean repeatOffender = recentCount > REPEAT_OFFENDER_THRESHOLD;
 
-        ThreatScoringInputs threatScoringInputs = new ThreatScoringInputs(
-                rawEvent.rule().severity(), rawEvent.action(), rawEvent.path(), repeatOffender);
-        int threatScore = threatScoreCalculator.calculate(threatScoringInputs).value();
+        Map<String, Object> facts = Map.of(
+                "severity", rawEvent.rule().severity().name(),
+                "action", rawEvent.action().name(),
+                "category", rawEvent.rule().category().name(),
+                "path", rawEvent.path(),
+                "method", rawEvent.method(),
+                "statusCode", rawEvent.statusCode(),
+                "clientIp", rawEvent.clientIp(),
+                "offenderEventCount", offenderEventCount);
+        int threatScore = threatScoreCalculator.calculate(facts).value();
         String attackType = attackTypeClassifier.displayNameFor(rawEvent.rule().category());
 
         return Optional.of(new EnrichedEventMessage(rawEvent, attackType, threatScore, receivedAt));
