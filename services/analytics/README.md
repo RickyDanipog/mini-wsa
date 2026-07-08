@@ -21,7 +21,10 @@ Base path `/v1`, JSON responses, port **8084**.
 | Method | Path | Query params | Purpose |
 |--------|------|--------------|---------|
 | GET | `/v1/stats/summary` | `configId`, `from`, `to` (all optional) | Aggregate statistics for the window |
+| GET | `/v1/stats/timeseries` | `configId`, `from`, `to` (optional), `interval` (`1m`\|`5m`\|`1h`, default `1h`) | Event counts bucketed by interval |
 | GET | `/v1/events/samples` | `configId`, `from`, `to`, `category`, `action`, `limit`, `offset` (all optional) | Paginated raw event samples |
+| POST | `/v1/alerts/define` | JSON body `{category, threshold, windowMinutes}` | Register an alert rule (**201**) |
+| GET | `/v1/alerts/evaluate` | `asOf` (optional ISO instant, default now) | Evaluate all rules, return their firing state |
 | GET | `/v1/ping` | — | `{"status":"ok","service":"analytics"}` |
 | GET | `/actuator/health` | — | Liveness / readiness |
 
@@ -51,8 +54,61 @@ and `geoLocation`). Results are sorted by `timestamp` **descending**.
 
 See the [root README](../../README.md#api-reference) for the full JSON bodies.
 
-Invalid params (e.g. a bad `category` name or malformed `from`) return
-`400 Bad Request` with the shape:
+### `GET /v1/stats/timeseries` — bucketed event counts
+
+Event counts grouped into fixed-width time buckets over an optional config +
+window. `interval` selects the bucket width (`1m`, `5m`, `1h`; defaults to
+`1h`); an unrecognised `interval` returns `400`.
+
+```bash
+# 5-minute buckets for one config within a window
+curl -s "localhost:8084/v1/stats/timeseries?configId=14227&from=2026-05-20T14:00:00Z&to=2026-05-20T15:00:00Z&interval=5m"
+```
+
+```json
+{ "configId": 14227, "timeRange": {"from":"2026-05-20T14:00:00Z","to":"2026-05-20T15:00:00Z"}, "interval": "5m",
+  "buckets": [ {"bucketStart":"2026-05-20T14:00:00Z","count":2}, {"bucketStart":"2026-05-20T14:05:00Z","count":1} ] }
+```
+
+Only **non-empty** buckets are returned (sparse), sorted by `bucketStart`
+**ascending**. Both read adapters (in-memory, Postgres) produce identical
+bucketing. This endpoint lives under `/v1/stats`, so the B4 rate limit covers it.
+
+### `POST /v1/alerts/define` & `GET /v1/alerts/evaluate` — threshold alerting
+
+Alert rules express "N events of category X within Y minutes". `define`
+registers a rule and returns **201** with its generated `id`; `evaluate` scores
+**every** rule as of an instant (`asOf`, default now) — for each rule it counts
+events of that category in the `[asOf - windowMinutes, asOf]` window and flags
+`firing` when `count ≥ threshold`.
+
+```bash
+# register a rule: 3+ INJECTION events within 10 minutes
+curl -s -X POST localhost:8084/v1/alerts/define \
+  -H 'Content-Type: application/json' \
+  -d '{"category":"INJECTION","threshold":3,"windowMinutes":10}'
+
+# evaluate all rules as of now
+curl -s "localhost:8084/v1/alerts/evaluate"
+```
+
+```json
+// POST /v1/alerts/define → 201
+{ "id": "3f1c…", "category": "INJECTION", "threshold": 3, "windowMinutes": 10 }
+
+// GET /v1/alerts/evaluate → 200
+{ "asOf": "2026-07-08T12:00:00Z",
+  "alerts": [ { "ruleId": "3f1c…", "category": "INJECTION", "threshold": 3, "windowMinutes": 10,
+                "count": 5, "firing": true, "window": {"from":"2026-07-08T11:50:00Z","to":"2026-07-08T12:00:00Z"} } ] }
+```
+
+Rules live in an in-memory `AlertRuleStore` and are **not persisted across
+restart**. Unlike `/v1/stats`, the `/v1/alerts/**` endpoints are **not**
+rate-limited — B4 covers only `/v1/stats` and `/v1/events`.
+
+Invalid params (e.g. a bad `category` name, a malformed `from`, an unknown
+`interval`, or a `threshold`/`windowMinutes` below 1) return `400 Bad Request`
+with the shape:
 
 ```json
 { "error": "Bad Request", "timestamp": "2026-07-06T09:00:00Z", "details": ["Invalid value 'FOO' for parameter 'category'"] }
