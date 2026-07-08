@@ -10,6 +10,9 @@ import com.akamai.wsa.analytics.domain.query.SampleQuery;
 import com.akamai.wsa.analytics.domain.query.StatisticsQuery;
 import com.akamai.wsa.analytics.domain.query.StatisticsSummary;
 import com.akamai.wsa.analytics.domain.query.TimeRange;
+import com.akamai.wsa.analytics.domain.query.TimeSeriesBucket;
+import com.akamai.wsa.analytics.domain.query.TimeSeriesQuery;
+import com.akamai.wsa.analytics.domain.query.TimeSeriesResult;
 import com.akamai.wsa.contracts.Action;
 import com.akamai.wsa.contracts.AttackCategory;
 import com.akamai.wsa.contracts.Severity;
@@ -69,6 +72,27 @@ public class PostgresAnalyticsReadStore implements AnalyticsReadStore {
                 pageArguments.toArray());
 
         return new EventSamplesPage(total, sampleQuery.limit(), sampleQuery.offset(), events);
+    }
+
+    @Override
+    public TimeSeriesResult timeSeries(TimeSeriesQuery timeSeriesQuery) {
+        WhereClause whereClause = buildWhereClause(
+                timeSeriesQuery.configId(), timeSeriesQuery.timeRange(), null, null);
+        Object[] arguments = whereClause.arguments().toArray();
+        long intervalSeconds = timeSeriesQuery.interval().duration().getSeconds();
+
+        List<TimeSeriesBucket> buckets = jdbcTemplate.query(
+                "SELECT to_timestamp(floor(extract(epoch from timestamp) / " + intervalSeconds + ") * "
+                        + intervalSeconds + ") AS bucket_start, count(*) AS bucket_count"
+                        + " FROM events" + whereClause.sql()
+                        + " GROUP BY bucket_start ORDER BY bucket_start",
+                (resultSet, rowNumber) -> new TimeSeriesBucket(
+                        resultSet.getObject("bucket_start", OffsetDateTime.class).toInstant(),
+                        resultSet.getLong("bucket_count")),
+                arguments);
+
+        return new TimeSeriesResult(timeSeriesQuery.configId(), timeSeriesQuery.timeRange(),
+                timeSeriesQuery.interval(), buckets);
     }
 
     private long countEvents(WhereClause whereClause, Object[] arguments) {
