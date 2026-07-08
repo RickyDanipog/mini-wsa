@@ -61,6 +61,29 @@ class InMemoryAnalyticsReadStoreTest {
     }
 
     @Test
+    void countsByCategoryWithinWindowRespectingInclusiveBoundaries() {
+        assertThat(store.countByCategoryWithin(AttackCategory.INJECTION,
+                new TimeRange(Instant.parse("2026-05-20T13:59:00Z"), Instant.parse("2026-05-20T14:06:00Z"))))
+                .isEqualTo(2);
+
+        assertThat(store.countByCategoryWithin(AttackCategory.INJECTION,
+                new TimeRange(Instant.parse("2026-05-20T14:00:00Z"), Instant.parse("2026-05-20T14:05:00Z"))))
+                .isEqualTo(2);
+
+        assertThat(store.countByCategoryWithin(AttackCategory.INJECTION,
+                new TimeRange(Instant.parse("2026-05-20T14:01:00Z"), Instant.parse("2026-05-20T14:10:00Z"))))
+                .isEqualTo(1);
+
+        assertThat(store.countByCategoryWithin(AttackCategory.BOT,
+                new TimeRange(Instant.parse("2026-05-20T14:00:00Z"), Instant.parse("2026-05-20T14:15:00Z"))))
+                .isEqualTo(1);
+
+        assertThat(store.countByCategoryWithin(AttackCategory.XSS,
+                new TimeRange(Instant.parse("2026-05-20T14:00:00Z"), Instant.parse("2026-05-20T14:15:00Z"))))
+                .isZero();
+    }
+
+    @Test
     void pagingOffsetSkipsNewestEvents() {
         EventSamplesPage secondPage = store.findSamples(new SampleQuery(14227, TimeRange.unbounded(), null, null, 2, 2));
         assertThat(secondPage.total()).isEqualTo(3);

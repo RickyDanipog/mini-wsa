@@ -19,6 +19,16 @@ runnable entry points (endpoints, curl examples, config, how to run) see
 
 ## How it works
 
+Ingestion is a single `IngestEvents` use case (`IngestEventsService`) fronted by
+two inbound adapters: the `IngestController` REST endpoint and the
+`EventIngestListener` Kafka consumer. Both share the same `EventRequestReader`
+parse, Bean Validation, mapping, and `events.raw` publish — a clean hexagonal
+"two adapters, one core". The listener consumes topic `events.ingest` (group
+`gateway-ingest`); since Kafka has no synchronous response, invalid messages are
+logged as a single-line WARN and skipped rather than surfaced as a `400`.
+`scripts/produce-to-kafka.sh` feeds generated events onto `events.ingest` to
+exercise the streaming path (bonus B2).
+
 A request lands on `IngestController` as a raw `JsonNode`, so a single object and
 an array both parse through the same path (`readRequests`). Each element binds to
 an `IngestEventRequest` DTO.

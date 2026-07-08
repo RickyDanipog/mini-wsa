@@ -345,6 +345,22 @@ docs/               requirements, effort estimate, SDD
 | [`docs/storage-benchmark.md`](docs/storage-benchmark.md) | Mongo-vs-Postgres benchmark + scaling sweep (storage justification) |
 | [`AGENTS.md`](AGENTS.md) | Engineering guidelines & conventions |
 
+## Bonus features
+
+Beyond the five required parts, these optional challenges are implemented (curl
+examples in the owning service's README):
+
+- **B2 — Streaming ingestion.** In addition to REST, the gateway consumes events
+  from the Kafka topic `events.ingest` (same validation, republished to
+  `events.raw`) — a second inbound adapter over one shared `IngestEvents` core.
+  Producer script: `scripts/produce-to-kafka.sh`. → [`services/gateway`](services/gateway)
+- **B3 — Time-series.** `GET /v1/stats/timeseries?interval={1m|5m|1h}` — event
+  counts bucketed by interval. → [`services/analytics`](services/analytics)
+- **B1 — Alerting.** `POST /v1/alerts/define` + `GET /v1/alerts/evaluate` —
+  "N events of category X within Y minutes" → firing alerts. → [`services/analytics`](services/analytics)
+- **B4 — Rate limiting.** `429` on `/v1/stats` + `/v1/events` when a client IP
+  exceeds the configured rate (`wsa.rate-limit`). → [`services/analytics`](services/analytics)
+
 ## What I'd improve with more time
 
 - **Dead-letter handling.** A poison message on `events.raw`/`events.enriched`
@@ -358,9 +374,6 @@ docs/               requirements, effort estimate, SDD
 - **Schema Registry + Avro.** Messages are JSON for now. Moving the contracts to
   Avro with a Schema Registry would make the cross-service compatibility rules
   enforceable at build time instead of by convention.
-- **The scale bonuses.** Time-series buckets (`/stats/timeseries`), alert
-  definitions/evaluation, and per-IP rate limiting on the read APIs are designed
-  in the SDD but not yet built.
 - **Richer observability.** Structured logs carry the correlation id; the
   natural next step is tracing spans across the Kafka hops and per-stage metrics
   (ingest rate, enrichment latency, consumer lag).

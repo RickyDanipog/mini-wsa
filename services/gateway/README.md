@@ -53,8 +53,32 @@ root README's API reference for the full request schema and error shape.
 
 ### Kafka
 
-Produces `MessageEnvelope<RawEventMessage>` to topic **`events.raw`**, keyed by
-**`clientIp`**, serialized as JSON (string key + string value).
+Ingestion has two inbound adapters over one shared `IngestEvents` use case: the
+REST endpoint above and a Kafka listener.
+
+- **Inbound (listener):** `@KafkaListener` on topic **`events.ingest`**, consumer
+  group **`gateway-ingest`**, consuming one event (object or batch array) per
+  message as a JSON string. It runs the **same validation + mapping** as REST and
+  republishes to `events.raw`. The correlation id comes from the
+  `x-correlation-id` Kafka header when present, else a fresh UUID. Kafka has no
+  synchronous response, so **invalid messages are logged (single-line WARN) and
+  skipped** — there is no dead-letter topic.
+- **Outbound (producer):** `MessageEnvelope<RawEventMessage>` to topic
+  **`events.raw`**, keyed by **`clientIp`**, serialized as JSON (string key +
+  string value).
+
+#### Streaming ingestion (bonus B2)
+
+`scripts/produce-to-kafka.sh` publishes generated events straight onto
+`events.ingest`, exercising the streaming path end-to-end:
+
+```bash
+scripts/produce-to-kafka.sh [count=200] [topic=events.ingest]
+```
+
+It runs the event-generator in `JSON_FILE` mode and streams the result one JSON
+object per message into the running `wsa-kafka` container's console producer.
+Requires the stack up plus JDK 21 / Maven and `jq` on the host.
 
 ## Configuration
 
@@ -63,6 +87,8 @@ Produces `MessageEnvelope<RawEventMessage>` to topic **`events.raw`**, keyed by
 | `server.port` | `8081` | HTTP listen port |
 | `spring.kafka.bootstrap-servers` (`KAFKA_BOOTSTRAP_SERVERS`) | `localhost:9092` | Kafka broker to publish to |
 | `wsa.topics.events-raw` | `events.raw` | Destination topic for raw events |
+| `wsa.topics.events-ingest` | `events.ingest` | Inbound streaming-ingestion topic (Kafka listener) |
+| `spring.kafka.consumer.group-id` | `gateway-ingest` | Consumer group for the ingestion listener (`auto-offset-reset: earliest`) |
 | `management.endpoints.web.exposure.include` | `health,info` | Exposed actuator endpoints |
 
 No `wsa.storage` property here — the gateway keeps no store. Its only runtime

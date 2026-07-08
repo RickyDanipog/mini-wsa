@@ -10,9 +10,13 @@ import com.akamai.wsa.analytics.domain.query.SampleQuery;
 import com.akamai.wsa.analytics.domain.query.StatisticsQuery;
 import com.akamai.wsa.analytics.domain.query.StatisticsSummary;
 import com.akamai.wsa.analytics.domain.query.TimeRange;
+import com.akamai.wsa.analytics.domain.query.TimeSeriesBucket;
+import com.akamai.wsa.analytics.domain.query.TimeSeriesQuery;
+import com.akamai.wsa.analytics.domain.query.TimeSeriesResult;
 import com.akamai.wsa.contracts.Action;
 import com.akamai.wsa.contracts.AttackCategory;
 
+import java.time.Instant;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -71,6 +75,36 @@ public class InMemoryAnalyticsReadStore implements AnalyticsReadStore {
         List<EnrichedEventView> page = ordered.stream()
                 .skip(sampleQuery.offset()).limit(sampleQuery.limit()).toList();
         return new EventSamplesPage(ordered.size(), sampleQuery.limit(), sampleQuery.offset(), page);
+    }
+
+    @Override
+    public TimeSeriesResult timeSeries(TimeSeriesQuery timeSeriesQuery) {
+        long intervalSeconds = timeSeriesQuery.interval().duration().getSeconds();
+        List<EnrichedEventView> matched = filter(
+                timeSeriesQuery.configId(), timeSeriesQuery.timeRange(), null, null);
+
+        List<TimeSeriesBucket> buckets = matched.stream()
+                .collect(Collectors.groupingBy(event -> floorToBucket(event.timestamp(), intervalSeconds),
+                        Collectors.counting()))
+                .entrySet().stream()
+                .map(entry -> new TimeSeriesBucket(entry.getKey(), entry.getValue()))
+                .sorted(Comparator.comparing(TimeSeriesBucket::bucketStart))
+                .toList();
+
+        return new TimeSeriesResult(timeSeriesQuery.configId(), timeSeriesQuery.timeRange(),
+                timeSeriesQuery.interval(), buckets);
+    }
+
+    @Override
+    public long countByCategoryWithin(AttackCategory category, TimeRange window) {
+        return events.stream()
+                .filter(event -> event.category() == category)
+                .filter(event -> window.includes(event.timestamp()))
+                .count();
+    }
+
+    private static Instant floorToBucket(Instant timestamp, long intervalSeconds) {
+        return Instant.ofEpochSecond(Math.floorDiv(timestamp.getEpochSecond(), intervalSeconds) * intervalSeconds);
     }
 
     private List<EnrichedEventView> filter(Integer configId, TimeRange timeRange, AttackCategory category, Action action) {

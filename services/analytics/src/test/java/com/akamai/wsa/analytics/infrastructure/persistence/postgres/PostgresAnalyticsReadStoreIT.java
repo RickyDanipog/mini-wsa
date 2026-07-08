@@ -194,6 +194,29 @@ class PostgresAnalyticsReadStoreIT {
         assertThat(event.receivedAt()).isEqualTo(BASE.plusSeconds(1500).plusMillis(120));
     }
 
+    @Test
+    void countsByCategoryWithinWindowRespectingInclusiveBoundariesAcrossConfigs() {
+        assertThat(postgresAnalyticsReadStore.countByCategoryWithin(AttackCategory.INJECTION,
+                new TimeRange(BASE, BASE.plusSeconds(600))))
+                .isEqualTo(3);
+
+        assertThat(postgresAnalyticsReadStore.countByCategoryWithin(AttackCategory.INJECTION,
+                new TimeRange(BASE.plusSeconds(1), BASE.plusSeconds(600))))
+                .isEqualTo(2);
+
+        assertThat(postgresAnalyticsReadStore.countByCategoryWithin(AttackCategory.BOT,
+                new TimeRange(BASE, BASE.plusSeconds(2000))))
+                .isEqualTo(2);
+
+        assertThat(postgresAnalyticsReadStore.countByCategoryWithin(AttackCategory.DATA_LEAKAGE,
+                new TimeRange(BASE, BASE.plusSeconds(2000))))
+                .isEqualTo(1);
+
+        assertThat(postgresAnalyticsReadStore.countByCategoryWithin(AttackCategory.DOS,
+                new TimeRange(BASE, BASE.plusSeconds(2000))))
+                .isZero();
+    }
+
     private static void insert(JdbcTemplate jdbcTemplate, String eventId, long offsetSeconds, int configId,
                                String clientIp, String path, AttackCategory category, Action action, int threatScore) {
         Instant timestamp = BASE.plusSeconds(offsetSeconds);

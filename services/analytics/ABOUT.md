@@ -28,9 +28,10 @@ bodies and curl examples.
 
 ## The read-store adapters — and why they must agree
 
-Storage sits behind the domain-owned `AnalyticsReadStore` port
-(`summarize` / `findSamples`), selected at runtime by the single `wsa.storage`
-switch. Two adapters implement it:
+Storage sits behind the domain-owned `AnalyticsReadStore` port (`summarize` /
+`findSamples`, plus `timeSeries` and `countByCategoryWithin` for the B3/B1
+bonuses), selected at runtime by the single `wsa.storage` switch. Two adapters
+implement it:
 
 - **in-memory** (`wsa.storage=inmemory`, the default) — seeded with demo events
   by `DevDataSeed`, so the read surface runs with zero external dependencies.
@@ -62,10 +63,21 @@ move, since this service reads them directly.
 
 ## Bonuses owned here
 
-- **B4 rate-limiting** — per-client-IP throttling that returns `429` on the two
-  read endpoints. Implemented on the `bonuses` branch
-  (`infrastructure/ratelimit/*` + `RateLimitConfiguration`).
-- **B3 time-series endpoint** — not yet built.
+All three analytics bonuses are implemented on the `bonuses` branch.
+
+- **B3 time-series** — `GET /v1/stats/timeseries` returns event counts bucketed
+  by a `1m`/`5m`/`1h` `interval` (sparse, ascending). The `BuildTimeSeries` use
+  case drives the new `timeSeries` port method; both read adapters bucket
+  identically.
+- **B1 alerting** — "N events of category X within Y minutes" rules.
+  `POST /v1/alerts/define` (`DefineAlertRule`) registers a rule; `GET
+  /v1/alerts/evaluate` (`EvaluateAlerts`) counts each rule's category over its
+  window via the new `countByCategoryWithin` port method and flags `firing`.
+  Rules live in an in-memory `AlertRuleStore` (`infrastructure/alert`), not
+  persisted across restart.
+- **B4 rate-limiting** — per-client-IP throttling that returns `429`
+  (`infrastructure/ratelimit/*` + `RateLimitConfiguration`). It covers only
+  `/v1/stats` and `/v1/events`; `/v1/alerts/**` is intentionally exempt.
 
 ## Key files
 

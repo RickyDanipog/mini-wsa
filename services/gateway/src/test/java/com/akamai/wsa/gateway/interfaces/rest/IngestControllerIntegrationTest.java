@@ -27,7 +27,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @SpringBootTest(
         webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
         properties = "spring.kafka.bootstrap-servers=${spring.embedded.kafka.brokers}")
-@EmbeddedKafka(partitions = 1, topics = "events.raw")
+@EmbeddedKafka(partitions = 1, topics = {"events.raw", "events.ingest"})
 class IngestControllerIntegrationTest {
 
     private static final String EVENT_JSON = """
