@@ -2,6 +2,7 @@ package com.akamai.wsa.enrichment.domain.service;
 
 import com.akamai.wsa.enrichment.domain.model.ThreatScore;
 import com.akamai.wsa.enrichment.domain.port.ScoringRuleRepository;
+import com.akamai.wsa.enrichment.ruleengine.Facts;
 import com.akamai.wsa.enrichment.ruleengine.Rule;
 import com.akamai.wsa.enrichment.ruleengine.RuleEngine;
 
@@ -14,7 +15,7 @@ public final class RuleEngineThreatScoreCalculator implements ThreatScoreCalcula
     }
 
     @Override
-    public ThreatScore calculate(ScoringFacts facts) {
+    public ThreatScore calculate(Facts facts) {
         RuleEngine<Integer> engine = new RuleEngine<>(scoringRuleRepository.findEnabledRules());
         int total = engine.matching(facts).stream()
                 .mapToInt(Rule::output)

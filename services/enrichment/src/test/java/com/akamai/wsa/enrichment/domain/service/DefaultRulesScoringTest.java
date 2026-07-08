@@ -2,12 +2,15 @@ package com.akamai.wsa.enrichment.domain.service;
 
 import com.akamai.wsa.enrichment.domain.port.ScoringRuleRepository;
 import com.akamai.wsa.enrichment.infrastructure.rules.InMemoryScoringRuleRepository;
+import com.akamai.wsa.enrichment.ruleengine.Facts;
 import com.akamai.wsa.enrichment.ruleengine.Rule;
 import com.akamai.wsa.enrichment.ruleengine.RuleCondition;
 import com.akamai.wsa.enrichment.ruleengine.RuleOperator;
 import org.junit.jupiter.api.Test;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -17,8 +20,13 @@ class DefaultRulesScoringTest {
             new InMemoryScoringRuleRepository());
 
     private int score(String severity, String action, String path, long offenderEventCount) {
-        return calculator.calculate(new ScoringFacts(
-                severity, action, null, path, null, 0, null, offenderEventCount)).value();
+        Map<String, Object> values = new HashMap<>();
+        values.put(FactKey.SEVERITY, severity);
+        values.put(FactKey.ACTION, action);
+        values.put(FactKey.PATH, path);
+        values.put(FactKey.OFFENDER_EVENT_COUNT, offenderEventCount);
+        Facts facts = values::get;
+        return calculator.calculate(facts).value();
     }
 
     @Test
@@ -70,8 +78,9 @@ class DefaultRulesScoringTest {
                         new RuleCondition("action", RuleOperator.EQUAL_TO, "DENY"), 50));
         ThreatScoreCalculator overflowing = new RuleEngineThreatScoreCalculator(inflatedRepository);
 
-        int total = overflowing.calculate(new ScoringFacts(
-                "CRITICAL", "DENY", null, null, null, 0, null, 0)).value();
+        Facts facts = Map.<String, Object>of(
+                FactKey.SEVERITY, "CRITICAL", FactKey.ACTION, "DENY")::get;
+        int total = overflowing.calculate(facts).value();
 
         assertThat(total).isEqualTo(100);
     }

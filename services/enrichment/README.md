@@ -28,9 +28,10 @@ classes. It runs on a **subject-agnostic rule engine** (`ruleengine`:
 rules into and evaluate — matching lives on `RuleOperator`/`RuleCondition`).
 Scoring is just one **usage** of that engine — rules of `type = "SCORING"`
 whose `output` is the points value. `EnrichmentService` builds a typed
-`ScoringFacts` (`severity, action, category, path, method, statusCode, clientIp,
-offenderEventCount`) — it implements the engine's agnostic `Facts` interface —
-and `RuleEngine` evaluates each enabled rule's
+`EventFacts` that **wraps the `RawEventMessage`** plus the derived
+`offenderEventCount` — it implements the engine's agnostic `Facts` interface,
+resolving each `FactKey` straight off the wrapped event — and `RuleEngine`
+evaluates each enabled rule's
 `(fact_key, operator, operand)` against it, and `RuleEngineThreatScoreCalculator`
 sums the matched rules' points (clamped to 100). The engine is generic, so the
 same machinery can drive other rule `type`s later.

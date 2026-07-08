@@ -5,7 +5,7 @@ import com.akamai.wsa.contracts.RawEventMessage;
 import com.akamai.wsa.enrichment.domain.port.OffenderWindow;
 import com.akamai.wsa.enrichment.domain.port.ProcessedEventLog;
 import com.akamai.wsa.enrichment.domain.service.AttackTypeClassifier;
-import com.akamai.wsa.enrichment.domain.service.ScoringFacts;
+import com.akamai.wsa.enrichment.domain.service.EventFacts;
 import com.akamai.wsa.enrichment.domain.service.ThreatScoreCalculator;
 import org.springframework.stereotype.Service;
 
@@ -47,16 +47,8 @@ public class EnrichmentService {
         long offenderEventCount = offenderWindow.countRecentEventsFromClient(
                 rawEvent.clientIp(), REPEAT_OFFENDER_WINDOW, receivedAt);
 
-        ScoringFacts scoringFacts = new ScoringFacts(
-                rawEvent.rule().severity().name(),
-                rawEvent.action().name(),
-                rawEvent.rule().category().name(),
-                rawEvent.path(),
-                rawEvent.method(),
-                rawEvent.statusCode(),
-                rawEvent.clientIp(),
-                offenderEventCount);
-        int threatScore = threatScoreCalculator.calculate(scoringFacts).value();
+        EventFacts eventFacts = new EventFacts(rawEvent, offenderEventCount);
+        int threatScore = threatScoreCalculator.calculate(eventFacts).value();
         String attackType = attackTypeClassifier.displayNameFor(rawEvent.rule().category());
 
         return Optional.of(new EnrichedEventMessage(rawEvent, attackType, threatScore, receivedAt));

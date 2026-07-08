@@ -22,7 +22,7 @@ gateway → events.raw → enrichment → events.enriched → event-store (Postg
 
 1. **Deduplicate** by `eventId` (first-sight wins), so a redelivered message is enriched at most once.
 2. **Record then read** the client IP against the sliding offender window and derive the repeat-offender flag.
-3. **Score** — build a typed `ScoringFacts` and run it through the rule engine to get the 0–100 `threatScore`.
+3. **Score** — build a typed `EventFacts` (wrapping the raw event) and run it through the rule engine to get the 0–100 `threatScore`.
 4. **Classify** — map `rule.category` to a human-readable `attackType` display name.
 5. Emit an `EnrichedEventMessage`; dropped duplicates return `Optional.empty()`.
 
@@ -38,10 +38,11 @@ Scoring is simply **one
 usage** of it — rules of `type = "SCORING"` whose `output` is the points value —
 so the same engine is reusable for other rule `type`s.
 
-`EnrichmentService` builds a typed `ScoringFacts` (`severity, action, category,
-path, method, statusCode, clientIp, offenderEventCount`; it implements the
-engine's `Facts` interface, with `FactKey` constants single-sourcing the key
-names) and `RuleEngineThreatScoreCalculator` sums the points of every matched `SCORING`
+`EnrichmentService` builds a typed `EventFacts` that **wraps the
+`RawEventMessage`** plus the derived `offenderEventCount`; it implements the
+engine's `Facts` interface, reading each fact straight off the wrapped event,
+with `FactKey` constants single-sourcing the key
+names, and `RuleEngineThreatScoreCalculator` sums the points of every matched `SCORING`
 rule, clamped to 100. Rules are **rows, not code**: they live in a shared
 `rules` table, so a reviewer adds, edits, or disables a rule with a single SQL
 row — no code change. The store is selected by `wsa.rules` (`inmemory` serves
@@ -59,7 +60,7 @@ The default rules reproduce the matrix below, which is additive and capped:
 
 `ThreatScore` is a value object that rejects out-of-range values and exposes
 `ofCapped(...)`. The repeat-offender input is the only stateful fact: the caller
-counts recent events per IP and passes the count into `ScoringFacts` (as
+counts recent events per IP and passes the count into `EventFacts` (as
 `offenderEventCount`), so the engine itself stays pure.
 
 `DefaultAttackTypeClassifier` maps `rule.category` to a display name
