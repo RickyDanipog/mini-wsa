@@ -1,9 +1,8 @@
 package com.akamai.wsa.gateway.infrastructure.config;
 
 import com.akamai.wsa.gateway.application.EventRequestMapper;
+import com.akamai.wsa.gateway.application.EventIngestionService;
 import com.akamai.wsa.gateway.application.EventRequestReader;
-import com.akamai.wsa.gateway.application.IngestEvents;
-import com.akamai.wsa.gateway.application.IngestEventsService;
 import com.akamai.wsa.gateway.infrastructure.messaging.RawEventPublisher;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.validation.Validator;
@@ -31,8 +30,8 @@ public class GatewayConfiguration {
     }
 
     @Bean
-    public IngestEvents ingestEvents(Validator validator, EventRequestMapper eventRequestMapper,
-                                     RawEventPublisher rawEventPublisher, Clock clock) {
-        return new IngestEventsService(validator, eventRequestMapper, rawEventPublisher, clock);
+    public EventIngestionService eventIngestionService(Validator validator, EventRequestMapper eventRequestMapper,
+                                                       RawEventPublisher rawEventPublisher, Clock clock) {
+        return new EventIngestionService(validator, eventRequestMapper, rawEventPublisher, clock);
     }
 }

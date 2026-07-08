@@ -1,6 +1,6 @@
 package com.akamai.wsa.analytics.interfaces.rest;
 
-import com.akamai.wsa.analytics.application.stats.SummarizeStatistics;
+import com.akamai.wsa.analytics.application.AnalyticsQueryService;
 import com.akamai.wsa.analytics.domain.query.StatisticsQuery;
 import com.akamai.wsa.analytics.domain.query.StatisticsSummary;
 import com.akamai.wsa.analytics.domain.query.TimeRange;
@@ -16,10 +16,10 @@ import java.time.Instant;
 @RequestMapping("/v1/stats")
 public class StatsController {
 
-    private final SummarizeStatistics summarizeStatistics;
+    private final AnalyticsQueryService analyticsQueryService;
 
-    public StatsController(SummarizeStatistics summarizeStatistics) {
-        this.summarizeStatistics = summarizeStatistics;
+    public StatsController(AnalyticsQueryService analyticsQueryService) {
+        this.analyticsQueryService = analyticsQueryService;
     }
 
     @GetMapping("/summary")
@@ -28,7 +28,7 @@ public class StatsController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant from,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant to) {
         StatisticsQuery query = new StatisticsQuery(configId, new TimeRange(from, to));
-        StatisticsSummary summary = summarizeStatistics.summarize(query);
+        StatisticsSummary summary = analyticsQueryService.summarize(query);
         return StatisticsSummaryResponse.from(summary);
     }
 }

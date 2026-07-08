@@ -1,7 +1,6 @@
 package com.akamai.wsa.analytics.interfaces.rest;
 
-import com.akamai.wsa.analytics.application.alert.DefineAlertRule;
-import com.akamai.wsa.analytics.application.alert.EvaluateAlerts;
+import com.akamai.wsa.analytics.application.alert.AlertService;
 import com.akamai.wsa.analytics.domain.alert.AlertEvaluation;
 import com.akamai.wsa.analytics.domain.alert.AlertRule;
 import com.akamai.wsa.analytics.domain.query.TimeRange;
@@ -21,6 +20,7 @@ import java.time.ZoneOffset;
 import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -38,10 +38,7 @@ class AlertsControllerTest {
     MockMvc mockMvc;
 
     @MockBean
-    DefineAlertRule defineAlertRule;
-
-    @MockBean
-    EvaluateAlerts evaluateAlerts;
+    AlertService alertService;
 
     @TestConfiguration
     static class FixedClockConfiguration {
@@ -53,7 +50,7 @@ class AlertsControllerTest {
 
     @Test
     void defineReturns201WithGeneratedId() throws Exception {
-        when(defineAlertRule.define(AttackCategory.INJECTION, 3, 10))
+        when(alertService.defineRule(AttackCategory.INJECTION, 3, 10))
                 .thenReturn(new AlertRule("generated-id", AttackCategory.INJECTION, 3, 10));
 
         mockMvc.perform(post("/v1/alerts/define")
@@ -65,13 +62,13 @@ class AlertsControllerTest {
                 .andExpect(jsonPath("$.threshold").value(3))
                 .andExpect(jsonPath("$.windowMinutes").value(10));
 
-        verify(defineAlertRule).define(AttackCategory.INJECTION, 3, 10);
+        verify(alertService).defineRule(AttackCategory.INJECTION, 3, 10);
     }
 
     @Test
     void evaluateReflectsFiringFlagsAndDefaultsAsOfToClock() throws Exception {
         TimeRange window = new TimeRange(Instant.parse("2026-05-20T14:00:00Z"), NOW);
-        when(evaluateAlerts.evaluate(eq(NOW))).thenReturn(List.of(
+        when(alertService.evaluate(eq(NOW))).thenReturn(List.of(
                 new AlertEvaluation("rule-injection", AttackCategory.INJECTION, 3, 10, 5, true, window),
                 new AlertEvaluation("rule-bot", AttackCategory.BOT, 4, 10, 1, false, window)));
 
@@ -87,20 +84,20 @@ class AlertsControllerTest {
                 .andExpect(jsonPath("$.alerts[1].ruleId").value("rule-bot"))
                 .andExpect(jsonPath("$.alerts[1].firing").value(false));
 
-        verify(evaluateAlerts).evaluate(NOW);
+        verify(alertService).evaluate(NOW);
     }
 
     @Test
     void evaluateHonoursExplicitAsOf() throws Exception {
         Instant asOf = Instant.parse("2026-05-20T12:00:00Z");
-        when(evaluateAlerts.evaluate(eq(asOf))).thenReturn(List.of());
+        when(alertService.evaluate(eq(asOf))).thenReturn(List.of());
 
         mockMvc.perform(get("/v1/alerts/evaluate").param("asOf", "2026-05-20T12:00:00Z"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.asOf").value("2026-05-20T12:00:00Z"))
                 .andExpect(jsonPath("$.alerts").isArray());
 
-        verify(evaluateAlerts).evaluate(asOf);
+        verify(alertService).evaluate(asOf);
     }
 
     @Test
@@ -117,7 +114,7 @@ class AlertsControllerTest {
 
     @Test
     void defineRejectsThresholdBelowOneWith400() throws Exception {
-        when(defineAlertRule.define(any(), eq(0), eq(10)))
+        when(alertService.defineRule(any(AttackCategory.class), anyInt(), anyInt()))
                 .thenThrow(new IllegalArgumentException("alert rule threshold must be at least 1"));
 
         mockMvc.perform(post("/v1/alerts/define")

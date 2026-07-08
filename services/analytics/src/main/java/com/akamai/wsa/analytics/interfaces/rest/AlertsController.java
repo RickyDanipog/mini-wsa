@@ -1,7 +1,6 @@
 package com.akamai.wsa.analytics.interfaces.rest;
 
-import com.akamai.wsa.analytics.application.alert.DefineAlertRule;
-import com.akamai.wsa.analytics.application.alert.EvaluateAlerts;
+import com.akamai.wsa.analytics.application.alert.AlertService;
 import com.akamai.wsa.analytics.domain.alert.AlertEvaluation;
 import com.akamai.wsa.analytics.domain.alert.AlertRule;
 import com.akamai.wsa.contracts.AttackCategory;
@@ -24,20 +23,18 @@ import java.util.List;
 @RequestMapping("/v1/alerts")
 public class AlertsController {
 
-    private final DefineAlertRule defineAlertRule;
-    private final EvaluateAlerts evaluateAlerts;
+    private final AlertService alertService;
     private final Clock clock;
 
-    public AlertsController(DefineAlertRule defineAlertRule, EvaluateAlerts evaluateAlerts, Clock clock) {
-        this.defineAlertRule = defineAlertRule;
-        this.evaluateAlerts = evaluateAlerts;
+    public AlertsController(AlertService alertService, Clock clock) {
+        this.alertService = alertService;
         this.clock = clock;
     }
 
     @PostMapping("/define")
     @ResponseStatus(HttpStatus.CREATED)
     public AlertRuleResponse define(@RequestBody DefineAlertRuleRequest request) {
-        AlertRule alertRule = defineAlertRule.define(
+        AlertRule alertRule = alertService.defineRule(
                 parseCategory(request.category()), request.threshold(), request.windowMinutes());
         return AlertRuleResponse.from(alertRule);
     }
@@ -46,7 +43,7 @@ public class AlertsController {
     public AlertEvaluationsResponse evaluate(
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant asOf) {
         Instant effectiveAsOf = asOf != null ? asOf : Instant.now(clock);
-        List<AlertEvaluation> evaluations = evaluateAlerts.evaluate(effectiveAsOf);
+        List<AlertEvaluation> evaluations = alertService.evaluate(effectiveAsOf);
         return AlertEvaluationsResponse.from(effectiveAsOf, evaluations);
     }
 

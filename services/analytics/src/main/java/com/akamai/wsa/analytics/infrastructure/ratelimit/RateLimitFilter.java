@@ -38,11 +38,18 @@ public class RateLimitFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
-        if (!properties.enabled() || rateLimiter.tryAcquire(resolveClientKey(request))) {
+        if (!properties.enabled()) {
             filterChain.doFilter(request, response);
             return;
         }
-        writeTooManyRequests(response);
+
+        boolean allowed = rateLimiter.tryAcquire(resolveClientKey(request));
+        if (!allowed) {
+            writeTooManyRequests(response);
+            return;
+        }
+
+        filterChain.doFilter(request, response);
     }
 
     private String resolveClientKey(HttpServletRequest request) {

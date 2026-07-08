@@ -5,27 +5,33 @@ import com.akamai.wsa.analytics.domain.alert.AlertRule;
 import com.akamai.wsa.analytics.domain.alert.AlertRuleStore;
 import com.akamai.wsa.analytics.domain.port.AnalyticsReadStore;
 import com.akamai.wsa.analytics.domain.query.TimeRange;
+import com.akamai.wsa.contracts.AttackCategory;
 import org.springframework.stereotype.Service;
 
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.UUID;
 
 @Service
-public class EvaluateAlertsService implements EvaluateAlerts {
+public class AlertService {
 
     private final AlertRuleStore alertRuleStore;
     private final AnalyticsReadStore readStore;
     private final Clock clock;
 
-    public EvaluateAlertsService(AlertRuleStore alertRuleStore, AnalyticsReadStore readStore, Clock clock) {
+    public AlertService(AlertRuleStore alertRuleStore, AnalyticsReadStore readStore, Clock clock) {
         this.alertRuleStore = alertRuleStore;
         this.readStore = readStore;
         this.clock = clock;
     }
 
-    @Override
+    public AlertRule defineRule(AttackCategory category, int threshold, int windowMinutes) {
+        AlertRule alertRule = new AlertRule(UUID.randomUUID().toString(), category, threshold, windowMinutes);
+        return alertRuleStore.save(alertRule);
+    }
+
     public List<AlertEvaluation> evaluate(Instant asOf) {
         Instant effectiveAsOf = asOf != null ? asOf : Instant.now(clock);
         return alertRuleStore.findAll().stream()

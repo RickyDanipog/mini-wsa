@@ -1,6 +1,6 @@
 package com.akamai.wsa.analytics.interfaces.rest;
 
-import com.akamai.wsa.analytics.application.samples.FetchEventSamples;
+import com.akamai.wsa.analytics.application.AnalyticsQueryService;
 import com.akamai.wsa.analytics.domain.model.EnrichedEventView;
 import com.akamai.wsa.analytics.domain.query.EventSamplesPage;
 import com.akamai.wsa.analytics.domain.query.SampleQuery;
@@ -32,7 +32,7 @@ class SamplesControllerTest {
     MockMvc mockMvc;
 
     @MockBean
-    FetchEventSamples fetchEventSamples;
+    AnalyticsQueryService analyticsQueryService;
 
     private EventSamplesPage samplePage() {
         EnrichedEventView newest = view("evt-3", 14227, "198.51.100.7", "/admin",
@@ -44,7 +44,7 @@ class SamplesControllerTest {
 
     @Test
     void returnsSamplesInExactShapeNewestFirst() throws Exception {
-        when(fetchEventSamples.fetch(any())).thenReturn(samplePage());
+        when(analyticsQueryService.findSamples(any())).thenReturn(samplePage());
 
         mockMvc.perform(get("/v1/events/samples").param("configId", "14227").param("limit", "2"))
                 .andExpect(status().isOk())
@@ -66,23 +66,23 @@ class SamplesControllerTest {
 
     @Test
     void clampsExcessiveLimitToMaximum() throws Exception {
-        when(fetchEventSamples.fetch(any())).thenReturn(samplePage());
+        when(analyticsQueryService.findSamples(any())).thenReturn(samplePage());
 
         mockMvc.perform(get("/v1/events/samples").param("limit", "500")).andExpect(status().isOk());
 
         ArgumentCaptor<SampleQuery> captor = ArgumentCaptor.forClass(SampleQuery.class);
-        verify(fetchEventSamples).fetch(captor.capture());
+        verify(analyticsQueryService).findSamples(captor.capture());
         assertThat(captor.getValue().limit()).isEqualTo(SampleQuery.MAXIMUM_LIMIT);
     }
 
     @Test
     void defaultsLimitTo20WhenOmitted() throws Exception {
-        when(fetchEventSamples.fetch(any())).thenReturn(samplePage());
+        when(analyticsQueryService.findSamples(any())).thenReturn(samplePage());
 
         mockMvc.perform(get("/v1/events/samples")).andExpect(status().isOk());
 
         ArgumentCaptor<SampleQuery> captor = ArgumentCaptor.forClass(SampleQuery.class);
-        verify(fetchEventSamples).fetch(captor.capture());
+        verify(analyticsQueryService).findSamples(captor.capture());
         assertThat(captor.getValue().limit()).isEqualTo(SampleQuery.DEFAULT_LIMIT);
     }
 

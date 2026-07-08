@@ -1,7 +1,7 @@
 package com.akamai.wsa.gateway.interfaces.rest;
 
+import com.akamai.wsa.gateway.application.EventIngestionService;
 import com.akamai.wsa.gateway.application.EventRequestReader;
-import com.akamai.wsa.gateway.application.IngestEvents;
 import com.akamai.wsa.gateway.interfaces.rest.dto.IngestEventRequest;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.slf4j.Logger;
@@ -25,11 +25,11 @@ class IngestController {
     private static final String CORRELATION_ID_HEADER = "x-correlation-id";
 
     private final EventRequestReader eventRequestReader;
-    private final IngestEvents ingestEvents;
+    private final EventIngestionService eventIngestionService;
 
-    IngestController(EventRequestReader eventRequestReader, IngestEvents ingestEvents) {
+    IngestController(EventRequestReader eventRequestReader, EventIngestionService eventIngestionService) {
         this.eventRequestReader = eventRequestReader;
-        this.ingestEvents = ingestEvents;
+        this.eventIngestionService = eventIngestionService;
     }
 
     @PostMapping("/ingest")
@@ -40,7 +40,7 @@ class IngestController {
 
         List<IngestEventRequest> ingestEventRequests = eventRequestReader.read(requestBody);
         String correlationId = resolveCorrelationId(correlationIdHeader);
-        int accepted = ingestEvents.ingest(ingestEventRequests, correlationId);
+        int accepted = eventIngestionService.ingest(ingestEventRequests, correlationId);
 
         logger.info("IngestController - ingest accepted={} correlationId={}", accepted, correlationId);
         return new IngestResponse(accepted);

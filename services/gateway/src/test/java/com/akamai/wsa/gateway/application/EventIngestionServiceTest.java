@@ -25,7 +25,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
-class IngestEventsServiceTest {
+class EventIngestionServiceTest {
 
     private static final String VALID_EVENT = """
             {"eventId":"evt-1","timestamp":"2026-05-20T14:32:10Z","configId":14227,"clientIp":"203.0.113.42",
@@ -41,14 +41,14 @@ class IngestEventsServiceTest {
     private final RawEventPublisher rawEventPublisher = mock(RawEventPublisher.class);
     private final Clock clock = Clock.fixed(Instant.parse("2026-07-08T00:00:00Z"), ZoneOffset.UTC);
 
-    private final IngestEventsService ingestEventsService =
-            new IngestEventsService(validator, eventRequestMapper, rawEventPublisher, clock);
+    private final EventIngestionService ingestEvents =
+            new EventIngestionService(validator, eventRequestMapper, rawEventPublisher, clock);
 
     @Test
     void mapsAndPublishesEachValidEventAndReturnsCount() throws Exception {
         List<IngestEventRequest> requests = readAll("[" + VALID_EVENT + "," + VALID_EVENT + "]");
 
-        int accepted = ingestEventsService.ingest(requests, "corr-1");
+        int accepted = ingestEvents.ingest(requests, "corr-1");
 
         assertThat(accepted).isEqualTo(2);
         ArgumentCaptor<MessageEnvelope<RawEventMessage>> captor = ArgumentCaptor.forClass(MessageEnvelope.class);
@@ -64,7 +64,7 @@ class IngestEventsServiceTest {
     void rejectsWholeBatchWhenAnyEventInvalidAndPublishesNothing() throws Exception {
         List<IngestEventRequest> requests = readAll("[" + VALID_EVENT + "," + INVALID_EVENT + "]");
 
-        assertThatThrownBy(() -> ingestEventsService.ingest(requests, "corr-1"))
+        assertThatThrownBy(() -> ingestEvents.ingest(requests, "corr-1"))
                 .isInstanceOf(BatchValidationException.class);
         verify(rawEventPublisher, never()).publish(org.mockito.ArgumentMatchers.any());
     }

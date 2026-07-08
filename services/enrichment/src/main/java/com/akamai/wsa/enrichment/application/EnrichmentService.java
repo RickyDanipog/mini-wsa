@@ -28,11 +28,11 @@ public class EnrichmentService {
     private final FactsFactory factsFactory;
 
     public EnrichmentService(Clock clock,
-                             ProcessedEventLog processedEventLog,
-                             OffenderWindow offenderWindow,
-                             AttackTypeClassifier attackTypeClassifier,
-                             ThreatScoreCalculator threatScoreCalculator,
-                             FactsFactory factsFactory) {
+                       ProcessedEventLog processedEventLog,
+                       OffenderWindow offenderWindow,
+                       AttackTypeClassifier attackTypeClassifier,
+                       ThreatScoreCalculator threatScoreCalculator,
+                       FactsFactory factsFactory) {
         this.clock = clock;
         this.processedEventLog = processedEventLog;
         this.offenderWindow = offenderWindow;
@@ -42,7 +42,8 @@ public class EnrichmentService {
     }
 
     public Optional<EnrichedEventMessage> enrich(RawEventMessage rawEvent) {
-        if (!processedEventLog.markProcessed(rawEvent.eventId())) {
+        boolean isFirstSighting = processedEventLog.markProcessed(rawEvent.eventId());
+        if (!isFirstSighting) {
             return Optional.empty();
         }
 

@@ -1,6 +1,6 @@
 package com.akamai.wsa.analytics.interfaces.rest;
 
-import com.akamai.wsa.analytics.application.stats.BuildTimeSeries;
+import com.akamai.wsa.analytics.application.AnalyticsQueryService;
 import com.akamai.wsa.analytics.domain.query.Interval;
 import com.akamai.wsa.analytics.domain.query.TimeRange;
 import com.akamai.wsa.analytics.domain.query.TimeSeriesQuery;
@@ -17,10 +17,10 @@ import java.time.Instant;
 @RequestMapping("/v1/stats")
 public class TimeSeriesController {
 
-    private final BuildTimeSeries buildTimeSeries;
+    private final AnalyticsQueryService analyticsQueryService;
 
-    public TimeSeriesController(BuildTimeSeries buildTimeSeries) {
-        this.buildTimeSeries = buildTimeSeries;
+    public TimeSeriesController(AnalyticsQueryService analyticsQueryService) {
+        this.analyticsQueryService = analyticsQueryService;
     }
 
     @GetMapping("/timeseries")
@@ -31,7 +31,7 @@ public class TimeSeriesController {
             @RequestParam(required = false, defaultValue = "1h") String interval) {
         TimeSeriesQuery query = new TimeSeriesQuery(
                 configId, new TimeRange(from, to), Interval.fromLabel(interval));
-        TimeSeriesResult result = buildTimeSeries.build(query);
+        TimeSeriesResult result = analyticsQueryService.timeSeries(query);
         return TimeSeriesResponse.from(result);
     }
 }

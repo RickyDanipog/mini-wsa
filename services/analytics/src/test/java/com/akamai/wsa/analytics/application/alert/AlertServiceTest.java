@@ -17,7 +17,7 @@ import java.util.List;
 import static com.akamai.wsa.analytics.testsupport.EnrichedEventViews.view;
 import static org.assertj.core.api.Assertions.assertThat;
 
-class EvaluateAlertsTest {
+class AlertServiceTest {
 
     private static final Instant AS_OF = Instant.parse("2026-05-20T14:10:00Z");
 
@@ -36,7 +36,7 @@ class EvaluateAlertsTest {
                     Instant.parse("2026-05-20T14:08:00Z"))));
 
     private final AlertRuleStore ruleStore = new InMemoryAlertRuleStore();
-    private final EvaluateAlerts evaluateAlerts = new EvaluateAlertsService(
+    private final AlertService alertService = new AlertService(
             ruleStore, readStore, Clock.fixed(AS_OF, ZoneOffset.UTC));
 
     @Test
@@ -89,7 +89,7 @@ class EvaluateAlertsTest {
         ruleStore.save(new AlertRule("bot-2", AttackCategory.BOT, 2, 10));
         ruleStore.save(new AlertRule("xss-1", AttackCategory.XSS, 1, 10));
 
-        List<AlertEvaluation> evaluations = evaluateAlerts.evaluate(AS_OF);
+        List<AlertEvaluation> evaluations = alertService.evaluate(AS_OF);
 
         assertThat(evaluations).hasSize(3);
         assertThat(evaluations).anySatisfy(evaluation -> {
@@ -113,14 +113,14 @@ class EvaluateAlertsTest {
     void defaultsAsOfToClockWhenNull() {
         ruleStore.save(new AlertRule("injection-3", AttackCategory.INJECTION, 3, 10));
 
-        AlertEvaluation evaluation = evaluateAlerts.evaluate(null).getFirst();
+        AlertEvaluation evaluation = alertService.evaluate(null).getFirst();
 
         assertThat(evaluation.window().to()).isEqualTo(AS_OF);
         assertThat(evaluation.count()).isEqualTo(3);
     }
 
     private AlertEvaluation onlyEvaluation() {
-        List<AlertEvaluation> evaluations = evaluateAlerts.evaluate(AS_OF);
+        List<AlertEvaluation> evaluations = alertService.evaluate(AS_OF);
         assertThat(evaluations).hasSize(1);
         return evaluations.getFirst();
     }

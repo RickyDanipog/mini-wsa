@@ -1,8 +1,8 @@
 package com.akamai.wsa.gateway.interfaces.messaging;
 
+import com.akamai.wsa.gateway.application.EventIngestionService;
 import com.akamai.wsa.gateway.application.EventRequestMapper;
 import com.akamai.wsa.gateway.application.EventRequestReader;
-import com.akamai.wsa.gateway.application.IngestEventsService;
 import com.akamai.wsa.gateway.infrastructure.messaging.RawEventPublisher;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
@@ -37,7 +37,7 @@ class EventIngestListenerTest {
     private final EventIngestListener listener = new EventIngestListener(
             objectMapper,
             new EventRequestReader(objectMapper),
-            new IngestEventsService(validator, new EventRequestMapper(), rawEventPublisher, clock));
+            new EventIngestionService(validator, new EventRequestMapper(), rawEventPublisher, clock));
 
     @Test
     void publishesRawEventForValidMessage() {

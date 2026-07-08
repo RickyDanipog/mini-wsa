@@ -14,31 +14,29 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
-public class IngestEventsService implements IngestEvents {
+public class EventIngestionService {
 
     private final Validator validator;
     private final EventRequestMapper eventRequestMapper;
     private final RawEventPublisher rawEventPublisher;
     private final Clock clock;
 
-    public IngestEventsService(Validator validator, EventRequestMapper eventRequestMapper,
-                               RawEventPublisher rawEventPublisher, Clock clock) {
+    public EventIngestionService(Validator validator, EventRequestMapper eventRequestMapper,
+                        RawEventPublisher rawEventPublisher, Clock clock) {
         this.validator = validator;
         this.eventRequestMapper = eventRequestMapper;
         this.rawEventPublisher = rawEventPublisher;
         this.clock = clock;
     }
 
-    @Override
-    public int ingest(List<IngestEventRequest> ingestEventRequests, String correlationId) {
-        validateAllOrNothing(ingestEventRequests);
-
+    public int ingest(List<IngestEventRequest> requests, String correlationId) {
+        validateAllOrNothing(requests);
         Instant occurredAt = Instant.now(clock);
-        for (IngestEventRequest ingestEventRequest : ingestEventRequests) {
-            RawEventMessage rawEventMessage = eventRequestMapper.toRawEventMessage(ingestEventRequest);
+        for (IngestEventRequest request : requests) {
+            RawEventMessage rawEventMessage = eventRequestMapper.toRawEventMessage(request);
             rawEventPublisher.publish(MessageEnvelope.of(correlationId, occurredAt, rawEventMessage));
         }
-        return ingestEventRequests.size();
+        return requests.size();
     }
 
     private void validateAllOrNothing(List<IngestEventRequest> ingestEventRequests) {

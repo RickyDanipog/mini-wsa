@@ -1,6 +1,6 @@
 package com.akamai.wsa.analytics.interfaces.rest;
 
-import com.akamai.wsa.analytics.application.samples.FetchEventSamples;
+import com.akamai.wsa.analytics.application.AnalyticsQueryService;
 import com.akamai.wsa.analytics.domain.query.EventSamplesPage;
 import com.akamai.wsa.analytics.domain.query.SampleQuery;
 import com.akamai.wsa.analytics.domain.query.TimeRange;
@@ -18,10 +18,10 @@ import java.time.Instant;
 @RequestMapping("/v1/events")
 public class SamplesController {
 
-    private final FetchEventSamples fetchEventSamples;
+    private final AnalyticsQueryService analyticsQueryService;
 
-    public SamplesController(FetchEventSamples fetchEventSamples) {
-        this.fetchEventSamples = fetchEventSamples;
+    public SamplesController(AnalyticsQueryService analyticsQueryService) {
+        this.analyticsQueryService = analyticsQueryService;
     }
 
     @GetMapping("/samples")
@@ -37,7 +37,7 @@ public class SamplesController {
         int effectiveOffset = Math.max(0, offset);
         SampleQuery query = new SampleQuery(
                 configId, new TimeRange(from, to), category, action, effectiveLimit, effectiveOffset);
-        EventSamplesPage page = fetchEventSamples.fetch(query);
+        EventSamplesPage page = analyticsQueryService.findSamples(query);
         return EventSamplesResponse.from(page);
     }
 }

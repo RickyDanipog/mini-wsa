@@ -1,7 +1,7 @@
 package com.akamai.wsa.gateway.interfaces.messaging;
 
+import com.akamai.wsa.gateway.application.EventIngestionService;
 import com.akamai.wsa.gateway.application.EventRequestReader;
-import com.akamai.wsa.gateway.application.IngestEvents;
 import com.akamai.wsa.gateway.interfaces.rest.MalformedRequestException;
 import com.akamai.wsa.gateway.interfaces.rest.dto.IngestEventRequest;
 import com.akamai.wsa.gateway.interfaces.rest.error.BatchValidationException;
@@ -26,13 +26,13 @@ public class EventIngestListener {
 
     private final ObjectMapper objectMapper;
     private final EventRequestReader eventRequestReader;
-    private final IngestEvents ingestEvents;
+    private final EventIngestionService eventIngestionService;
 
     public EventIngestListener(ObjectMapper objectMapper, EventRequestReader eventRequestReader,
-                               IngestEvents ingestEvents) {
+                               EventIngestionService eventIngestionService) {
         this.objectMapper = objectMapper;
         this.eventRequestReader = eventRequestReader;
-        this.ingestEvents = ingestEvents;
+        this.eventIngestionService = eventIngestionService;
     }
 
     @KafkaListener(topics = "${wsa.topics.events-ingest}", groupId = "gateway-ingest")
@@ -40,7 +40,7 @@ public class EventIngestListener {
         String correlationId = resolveCorrelationId(record);
         try {
             List<IngestEventRequest> ingestEventRequests = eventRequestReader.read(objectMapper.readTree(record.value()));
-            int accepted = ingestEvents.ingest(ingestEventRequests, correlationId);
+            int accepted = eventIngestionService.ingest(ingestEventRequests, correlationId);
             logger.info("EventIngestListener - ingested accepted={} correlationId={}", accepted, correlationId);
         } catch (MalformedRequestException | BatchValidationException | JsonProcessingException rejected) {
             logger.warn("EventIngestListener - rejected message reason={} correlationId={}",

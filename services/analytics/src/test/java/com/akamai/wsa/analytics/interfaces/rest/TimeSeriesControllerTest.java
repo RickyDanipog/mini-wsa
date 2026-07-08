@@ -1,6 +1,6 @@
 package com.akamai.wsa.analytics.interfaces.rest;
 
-import com.akamai.wsa.analytics.application.stats.BuildTimeSeries;
+import com.akamai.wsa.analytics.application.AnalyticsQueryService;
 import com.akamai.wsa.analytics.domain.query.Interval;
 import com.akamai.wsa.analytics.domain.query.TimeRange;
 import com.akamai.wsa.analytics.domain.query.TimeSeriesBucket;
@@ -31,7 +31,7 @@ class TimeSeriesControllerTest {
     MockMvc mockMvc;
 
     @MockBean
-    BuildTimeSeries buildTimeSeries;
+    AnalyticsQueryService analyticsQueryService;
 
     private TimeSeriesResult sampleResult() {
         return new TimeSeriesResult(
@@ -45,7 +45,7 @@ class TimeSeriesControllerTest {
 
     @Test
     void returnsBucketsInExactShape() throws Exception {
-        when(buildTimeSeries.build(any())).thenReturn(sampleResult());
+        when(analyticsQueryService.timeSeries(any())).thenReturn(sampleResult());
 
         mockMvc.perform(get("/v1/stats/timeseries")
                         .param("configId", "14227")
@@ -63,18 +63,18 @@ class TimeSeriesControllerTest {
                 .andExpect(jsonPath("$.buckets[1].count").value(1));
 
         ArgumentCaptor<TimeSeriesQuery> captor = ArgumentCaptor.forClass(TimeSeriesQuery.class);
-        verify(buildTimeSeries).build(captor.capture());
+        verify(analyticsQueryService).timeSeries(captor.capture());
         assertThat(captor.getValue().interval()).isEqualTo(Interval.FIVE_MINUTES);
     }
 
     @Test
     void defaultsToOneHourIntervalWhenOmitted() throws Exception {
-        when(buildTimeSeries.build(any())).thenReturn(sampleResult());
+        when(analyticsQueryService.timeSeries(any())).thenReturn(sampleResult());
 
         mockMvc.perform(get("/v1/stats/timeseries")).andExpect(status().isOk());
 
         ArgumentCaptor<TimeSeriesQuery> captor = ArgumentCaptor.forClass(TimeSeriesQuery.class);
-        verify(buildTimeSeries).build(captor.capture());
+        verify(analyticsQueryService).timeSeries(captor.capture());
         assertThat(captor.getValue().configId()).isNull();
         assertThat(captor.getValue().interval()).isEqualTo(Interval.ONE_HOUR);
     }

@@ -1,6 +1,6 @@
 package com.akamai.wsa.analytics.interfaces.rest;
 
-import com.akamai.wsa.analytics.application.stats.SummarizeStatistics;
+import com.akamai.wsa.analytics.application.AnalyticsQueryService;
 import com.akamai.wsa.analytics.domain.query.AttackerStatistics;
 import com.akamai.wsa.analytics.domain.query.CategoryStatistics;
 import com.akamai.wsa.analytics.domain.query.PathStatistics;
@@ -36,7 +36,7 @@ class StatsControllerTest {
     MockMvc mockMvc;
 
     @MockBean
-    SummarizeStatistics summarizeStatistics;
+    AnalyticsQueryService analyticsQueryService;
 
     private StatisticsSummary sampleSummary() {
         Map<AttackCategory, CategoryStatistics> byCategory = new LinkedHashMap<>();
@@ -55,7 +55,7 @@ class StatsControllerTest {
 
     @Test
     void returnsSummaryInExactShapeWithRoundedAverages() throws Exception {
-        when(summarizeStatistics.summarize(any())).thenReturn(sampleSummary());
+        when(analyticsQueryService.summarize(any())).thenReturn(sampleSummary());
 
         mockMvc.perform(get("/v1/stats/summary")
                         .param("configId", "14227")
@@ -78,12 +78,12 @@ class StatsControllerTest {
 
     @Test
     void passesNullConfigIdAndUnboundedRangeWhenParamsOmitted() throws Exception {
-        when(summarizeStatistics.summarize(any())).thenReturn(sampleSummary());
+        when(analyticsQueryService.summarize(any())).thenReturn(sampleSummary());
 
         mockMvc.perform(get("/v1/stats/summary")).andExpect(status().isOk());
 
         ArgumentCaptor<StatisticsQuery> captor = ArgumentCaptor.forClass(StatisticsQuery.class);
-        verify(summarizeStatistics).summarize(captor.capture());
+        verify(analyticsQueryService).summarize(captor.capture());
         assertThat(captor.getValue().configId()).isNull();
         assertThat(captor.getValue().timeRange().from()).isNull();
         assertThat(captor.getValue().timeRange().to()).isNull();
