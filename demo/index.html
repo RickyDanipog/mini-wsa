@@ -109,11 +109,11 @@
   .last-btn:disabled { opacity: .5; cursor: default; }
 
   /* response slide-over drawer (overlay, does not affect layout / does not follow scroll) */
-  .scrim { position: fixed; inset: 0; z-index: 60; background: rgba(16,32,43,.28); opacity: 0; visibility: hidden; transition: opacity .18s ease; }
+  .scrim { position: fixed; inset: 0; z-index: 60; background: rgba(16,32,43,.28); opacity: 0; visibility: hidden; pointer-events: none; transition: opacity .18s ease; }
   @media (prefers-color-scheme: dark) { .scrim { background: rgba(0,0,0,.5); } }
   :root[data-theme="dark"] .scrim { background: rgba(0,0,0,.5); }
   :root[data-theme="light"] .scrim { background: rgba(16,32,43,.28); }
-  .scrim.open { opacity: 1; visibility: visible; }
+  .scrim.open { opacity: 1; visibility: visible; pointer-events: auto; }
 
   .drawer {
     position: fixed; top: 0; right: 0; z-index: 61; height: 100vh; height: 100dvh;
@@ -122,9 +122,9 @@
     box-shadow: -12px 0 40px rgba(16,32,43,.18);
     display: flex; flex-direction: column;
     transform: translateX(100%); transition: transform .22s ease;
-    visibility: hidden;
+    visibility: hidden; pointer-events: none;
   }
-  .drawer.open { transform: translateX(0); visibility: visible; }
+  .drawer.open { transform: translateX(0); visibility: visible; pointer-events: auto; }
   .drawer .dr-head { display: flex; align-items: center; gap: 10px; padding: 13px 16px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
   .drawer .dr-head .lbl { font-size: 10.5px; text-transform: uppercase; letter-spacing: .08em; font-weight: 700; color: var(--muted); }
   .drawer .dr-head .stat { font-size: 12px; font-weight: 700; padding: 2px 9px; border-radius: 999px; white-space: nowrap; }
@@ -174,6 +174,24 @@
   tr:last-child td { border-bottom: 0; }
   .tbl-scroll { overflow-x: auto; }
 
+  .pager { display: flex; align-items: center; gap: 10px; margin-top: 13px; flex-wrap: wrap; }
+  .pager button { padding: 6px 11px; }
+  .pager button:disabled { opacity: .4; cursor: default; }
+  .pager #samplesRange { font-size: 11.5px; color: var(--muted); }
+
+  .rules-tbl td { vertical-align: middle; padding: 6px 10px 6px 0; }
+  .rules-tbl input, .rules-tbl select { width: auto; min-width: 0; padding: 5px 7px; font-size: 12px; }
+  .rules-tbl input[type=checkbox] { width: 15px; height: 15px; accent-color: var(--accent); cursor: pointer; }
+  .rules-tbl .ri-id { width: 110px; font-family: ui-monospace, monospace; font-size: 11px; }
+  .rules-tbl .ri-id[readonly] { border-color: transparent; background: transparent; color: var(--muted); padding-left: 0; }
+  .rules-tbl .ri-title { min-width: 130px; }
+  .rules-tbl .ri-operand { min-width: 110px; }
+  .rules-tbl .ri-num { width: 56px; text-align: right; }
+  .rules-tbl .ri-sel { min-width: 90px; }
+  .rules-tbl .row-actions { display: flex; gap: 6px; flex-wrap: nowrap; }
+  .rules-tbl .row-actions button { padding: 5px 9px; font-size: 11.5px; }
+  .rules-tbl tr.dirty td { background: color-mix(in srgb, var(--warn) 8%, transparent); }
+
   .chip { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; border: 1px solid transparent; }
   .chip.crit { color: var(--crit); background: color-mix(in srgb, var(--crit) 14%, transparent); border-color: color-mix(in srgb, var(--crit) 30%, transparent); }
   .chip.warn { color: var(--warn); background: color-mix(in srgb, var(--warn) 15%, transparent); border-color: color-mix(in srgb, var(--warn) 32%, transparent); }
@@ -215,6 +233,7 @@
     <div class="brand">Mini&nbsp;WSA <span>· Simulation Console</span></div>
     <div class="health">
       <div class="hitem"><span class="hdot" id="h-gateway"></span> gateway</div>
+      <div class="hitem"><span class="hdot" id="h-enrichment"></span> enrichment</div>
       <div class="hitem"><span class="hdot" id="h-analytics"></span> analytics</div>
       <span class="hpill" id="statusPill" title="Most recent response status">no request yet</span>
       <button class="last-btn" id="lastBtn" type="button" disabled aria-haspopup="dialog" aria-controls="drawer">Last response</button>
@@ -228,7 +247,6 @@
   <p class="sub">Each control on the left triggers a real request against the running services through the same-origin nginx proxy. Every response slides in from the right; reopen the most recent one anytime with <b>Last response</b> in the header. The dashboard refreshes from the analytics service's own <code>/v1/stats</code> endpoints.</p>
 
   <div class="console">
-    <!-- ============ CONTROL RAIL ============ -->
     <aside class="rail">
 
       <section class="section">
@@ -247,14 +265,61 @@
         <span class="tag">FR5 + FR2 · Attack wave &amp; scoring</span>
         <h3>Simulate an attack wave</h3>
         <p class="desc">Generates events in the browser and POSTs them in batches. Repeated <code>(IP, path)</code> bursts hit <code>/admin</code>/<code>/login</code> to trip sensitive-path and repeat-offender scoring, mixed with varied categories, severities and actions.</p>
-        <div class="field">
-          <label for="waveCount">Events to generate</label>
-          <input type="number" id="waveCount" value="30" min="1" max="500" step="1">
+        <div class="field-row">
+          <div class="field">
+            <label for="waveCount">Events / wave</label>
+            <input type="number" id="waveCount" value="30" min="1" max="500" step="1">
+          </div>
+          <div class="field">
+            <label for="waveN">Waves</label>
+            <input type="number" id="waveN" value="1" min="1" max="20" step="1">
+          </div>
+          <div class="field">
+            <label for="waveGap">Gap (sec)</label>
+            <input type="number" id="waveGap" value="3" min="0" max="120" step="1">
+          </div>
         </div>
         <div class="btn-row">
           <button class="primary" id="btnWave" type="button">Run attack wave</button>
         </div>
         <div class="res" id="resWave"></div>
+      </section>
+
+      <section class="section">
+        <span class="tag">FR2 · Scoring rules</span>
+        <h3>Edit the rule engine</h3>
+        <p class="desc">The enrichment service scores every event against these data-driven rules (<code>/api/enrichment/v1/rules</code>). Add, edit or delete a rule and it takes effect on the <b>next</b> event — no restart. Then run an attack wave to see scores shift.</p>
+        <div class="btn-row">
+          <button class="primary" id="btnRuleAdd" type="button">Add rule</button>
+          <button id="btnRulesReload" type="button">Reload</button>
+        </div>
+        <div class="res" id="resRules"></div>
+      </section>
+
+      <section class="section">
+        <span class="tag">FR1 + FR2 · Custom event</span>
+        <h3>Craft &amp; score one event</h3>
+        <p class="desc">Set the fields a scoring rule keys on, send a single <code>POST /v1/events/ingest</code>, and read back the <b>threat score</b> the engine gave it — the quickest way to prove a rule you just added.</p>
+        <div class="field-row">
+          <div class="field"><label for="cSeverity">Severity</label><select id="cSeverity"></select></div>
+          <div class="field"><label for="cCategory">Category</label><select id="cCategory"></select></div>
+        </div>
+        <div class="field-row">
+          <div class="field"><label for="cAction">Action</label><select id="cAction"></select></div>
+          <div class="field"><label for="cMethod">Method</label><select id="cMethod"></select></div>
+        </div>
+        <div class="field-row">
+          <div class="field"><label for="cPath">Path</label><input type="text" id="cPath" value="/admin"></div>
+          <div class="field"><label for="cStatus">Status code</label><input type="number" id="cStatus" value="403" min="100" max="599" step="1"></div>
+        </div>
+        <div class="field-row">
+          <div class="field"><label for="cClientIp">Client IP</label><input type="text" id="cClientIp" placeholder="(random)"></div>
+          <div class="field"><label for="cCountry">Geo country</label><input type="text" id="cCountry" value="US" maxlength="2"></div>
+        </div>
+        <div class="btn-row">
+          <button class="primary" id="btnCustom" type="button">Send &amp; score</button>
+        </div>
+        <div class="res" id="resCustom"></div>
       </section>
 
       <section class="section">
@@ -349,7 +414,6 @@
 
     </aside>
 
-    <!-- ============ DASHBOARD ============ -->
     <main class="main">
 
       <div class="kpis" id="kpis">
@@ -408,6 +472,21 @@
         </div>
 
         <div class="card wide">
+          <h2>Scoring rules <span class="mono" id="rulesCount" style="color:var(--muted);font-weight:500;font-size:11px"></span></h2>
+          <p class="hint">FR2 · <code>/v1/rules</code> on enrichment — a rule adds its <b>points</b> to an event's threat score when the fact at <code>factKey</code> satisfies <code>operator operand</code>. Edit a cell, then Save the row.</p>
+          <div class="tbl-scroll">
+            <table id="rules" class="rules-tbl">
+              <thead><tr>
+                <th>ID</th><th>Title</th><th>Fact key</th><th>Operator</th><th>Operand</th>
+                <th style="text-align:right">Pts</th><th style="text-align:right">Prio</th><th>On</th><th></th>
+              </tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <div class="empty" id="rulesEmpty">No rules loaded — is enrichment up? Hit Reload (FR2).</div>
+        </div>
+
+        <div class="card wide">
           <h2>Event samples <span class="mono" id="samplesTotal" style="color:var(--muted);font-weight:500;font-size:11px"></span></h2>
           <p class="hint">FR4 · <code>GET /v1/events/samples</code> — newest first</p>
           <div class="tbl-scroll">
@@ -419,12 +498,17 @@
             </table>
           </div>
           <div class="empty" id="samplesEmpty">No samples yet — Fetch samples (FR4) or run an attack wave.</div>
+          <div class="pager">
+            <button id="btnPrev" type="button" disabled>&lsaquo; Prev</button>
+            <button id="btnNext" type="button" disabled>Next &rsaquo;</button>
+            <span class="mono" id="samplesRange"></span>
+          </div>
         </div>
       </div>
 
       <footer>
         Live console for the Mini WSA pipeline — <span class="mono">gateway → Kafka → enrichment (rule engine) → event-store → analytics</span>.
-        All requests go same-origin through nginx to <code>/api/gateway/…</code> and <code>/api/analytics/…</code>. If a call fails, start the stack with <code>docker compose up</code>.
+        All requests go same-origin through nginx to <code>/api/gateway/…</code>, <code>/api/enrichment/…</code> and <code>/api/analytics/…</code>. If a call fails, start the stack with <code>docker compose up</code>.
       </footer>
     </main>
   </div>
@@ -445,18 +529,38 @@
 
 <script>
   "use strict";
+  (function () {
+    function banner(msg) {
+      var b = document.getElementById("js-error-banner") || document.createElement("div");
+      b.id = "js-error-banner";
+      b.style.cssText = "position:fixed;left:0;right:0;bottom:0;z-index:200;background:#d7373f;color:#fff;font:12.5px/1.5 ui-monospace,monospace;padding:10px 14px;white-space:pre-wrap;box-shadow:0 -6px 20px rgba(0,0,0,.35)";
+      b.textContent = "⚠ Console JS error — " + msg + "  (share this so it can be fixed)";
+      if (!b.parentNode) document.body.appendChild(b);
+    }
+    window.addEventListener("error", function (e) { banner((e.message || "error") + "  @line " + (e.lineno || "?")); });
+    window.addEventListener("unhandledrejection", function (e) { banner("promise rejected: " + ((e.reason && e.reason.message) || e.reason)); });
+  })();
 
-  // ---------- endpoints (relative, same-origin) ----------
   const API = {
     gwIngest: "/api/gateway/v1/events/ingest",
     gwHealth: "/api/gateway/actuator/health",
     anHealth: "/api/analytics/actuator/health",
+    enHealth: "/api/enrichment/actuator/health",
     summary: "/api/analytics/v1/stats/summary",
     timeseries: i => "/api/analytics/v1/stats/timeseries?interval=" + encodeURIComponent(i),
     samples: q => "/api/analytics/v1/events/samples" + q,
     alertsDefine: "/api/analytics/v1/alerts/define",
-    alertsEvaluate: "/api/analytics/v1/alerts/evaluate"
+    alertsEvaluate: "/api/analytics/v1/alerts/evaluate",
+    rules: "/api/enrichment/v1/rules",
+    ruleOptions: "/api/enrichment/v1/rules/options",
+    ruleById: id => "/api/enrichment/v1/rules/" + encodeURIComponent(id)
   };
+
+  const RULE_OPERATORS = ["EQUAL_TO", "NOT_EQUAL_TO", "GREATER_THAN", "GREATER_THAN_OR_EQUAL",
+    "LESS_THAN", "LESS_THAN_OR_EQUAL", "IN", "NOT_IN", "CONTAINS", "CONTAINS_ANY",
+    "STARTS_WITH", "ENDS_WITH", "REGEX_MATCH", "BETWEEN", "EXISTS"];
+  const RULE_FACT_KEYS = ["rule.severity", "rule.category", "action", "path", "method",
+    "statusCode", "clientIp", "offenderEventCount", "geoLocation.country"];
 
   const CATEGORIES = ["INJECTION", "XSS", "PROTOCOL_VIOLATION", "DATA_LEAKAGE", "BOT", "DOS", "RATE_LIMIT"];
   const SEVERITIES = ["CRITICAL", "HIGH", "MEDIUM", "LOW"];
@@ -475,15 +579,16 @@
     BOT: "Bot Activity", DOS: "Denial of Service", RATE_LIMIT: "Rate Limiting"
   };
 
-  // ---------- helpers ----------
   const $ = s => document.querySelector(s);
   const pick = a => a[Math.floor(Math.random() * a.length)];
   const randInt = (lo, hi) => lo + Math.floor(Math.random() * (hi - lo + 1));
   const randIp = () => `${randInt(1, 223)}.${randInt(0, 255)}.${randInt(0, 255)}.${randInt(1, 254)}`;
+  const cityFor = c => (GEO.find(g => g[0] === c) || [c, "—"])[1];
   let counter = 0;
   const uid = () => `demo-${Date.now()}-${counter++}`;
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const clampInt = (sel, lo, hi, dflt) => Math.max(lo, Math.min(hi, parseInt($(sel).value, 10) || dflt));
 
-  // ---------- event generator (valid IngestEventRequest) ----------
   function makeEvent(over) {
     over = over || {};
     const category = over.category || pick(CATEGORIES);
@@ -493,8 +598,10 @@
     const clientIp = over.clientIp || randIp();
     const ageMs = over.ageMs != null ? over.ageMs : randInt(0, 30 * 60 * 1000);
     const timestamp = new Date(Date.now() - ageMs).toISOString();
-    const statusCode = action === "DENY" ? 403 : (Math.random() < 0.5 ? 200 : 401);
-    const geo = pick(GEO);
+    const method = over.method || pick(METHODS);
+    const statusCode = over.statusCode != null ? over.statusCode
+      : (action === "DENY" ? 403 : (Math.random() < 0.5 ? 200 : 401));
+    const geo = over.country ? [over.country, cityFor(over.country)] : pick(GEO);
     return {
       eventId: uid(),
       timestamp,
@@ -503,7 +610,7 @@
       clientIp,
       hostname: "app.miniwsa.dev",
       path,
-      method: pick(METHODS),
+      method,
       statusCode,
       userAgent: pick(UAS),
       rule: {
@@ -520,7 +627,6 @@
     };
   }
 
-  // repeated (IP,path) bursts on sensitive paths + varied filler
   function generateWave(n) {
     const events = [];
     const attackers = [randIp(), randIp(), randIp()];
@@ -540,7 +646,6 @@
     return events;
   }
 
-  // ---------- fetch wrapper ----------
   async function api(method, path, body) {
     const opts = { method, headers: {} };
     if (body !== undefined) {
@@ -561,7 +666,6 @@
     }
   }
 
-  // ---------- response drawer ----------
   const drawer = $("#drawer");
   const scrim = $("#scrim");
   let lastResponse = null;
@@ -626,7 +730,6 @@
     el.innerHTML = html;
   }
 
-  // ---------- SVG chart primitives ----------
   const NS = "http://www.w3.org/2000/svg";
   const css = k => getComputedStyle(document.documentElement).getPropertyValue(k).trim();
   const svgEl = (t, a) => { const e = document.createElementNS(NS, t); for (const k in a) e.setAttribute(k, a[k]); return e; };
@@ -637,10 +740,10 @@
   const actClass = a => a === "DENY" ? "crit" : a === "ALERT" ? "warn" : "ok";
   const fmtTime = iso => { const d = new Date(iso); return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }); };
 
-  // ---------- state ----------
   const state = { summary: null, ts: null, tsInterval: "1h" };
+  let samplesOffset = 0;
+  const sampleLimit = () => Math.max(1, Math.min(100, parseInt($("#fLimit").value, 10) || 20));
 
-  // ---------- time-series area chart ----------
   function renderTimeseries() {
     const box = $("#ts");
     box.innerHTML = "";
@@ -690,7 +793,6 @@
     box.appendChild(svg);
   }
 
-  // ---------- horizontal bars ----------
   function bars(id, emptyId, items, getName, getVal, getNum, opts) {
     opts = opts || {};
     const host = $(id); host.innerHTML = "";
@@ -715,7 +817,6 @@
     });
   }
 
-  // ---------- render summary ----------
   function renderSummary() {
     const s = state.summary;
     if (!s) return;
@@ -762,13 +863,13 @@
       { tipHtml: d => `<b>${d.p}</b> &middot; ${d.c} hits` });
   }
 
-  // ---------- render samples ----------
   function renderSamples(data) {
     const tb = $("#samples tbody");
     tb.innerHTML = "";
     const rows = (data && data.results) || [];
     $("#samplesTotal").textContent = data ? `· ${data.total} total` : "";
     $("#samplesEmpty").style.display = rows.length ? "none" : "block";
+    updatePager(data);
     rows.forEach(s => {
       const sev = s.rule ? s.rule.severity : "";
       const catg = s.rule ? s.rule.category : "";
@@ -785,7 +886,17 @@
     });
   }
 
-  // ---------- render alerts ----------
+  function updatePager(data) {
+    const total = (data && typeof data.total === "number") ? data.total : 0;
+    const results = (data && data.results) || [];
+    const offset = (data && typeof data.offset === "number") ? data.offset : samplesOffset;
+    $("#samplesRange").textContent = total === 0
+      ? "no events"
+      : `showing ${offset + 1}–${offset + results.length} of ${total}`;
+    $("#btnPrev").disabled = samplesOffset === 0;
+    $("#btnNext").disabled = offset + results.length >= total;
+  }
+
   function renderAlerts(data) {
     const host = $("#alerts"); host.innerHTML = "";
     const alerts = (data && data.alerts) || [];
@@ -808,7 +919,6 @@
     $("#kFiringFoot").textContent = alerts.length + " rule(s) evaluated";
   }
 
-  // ---------- actions ----------
   async function busy(btn, fn) {
     btn.disabled = true;
     try { return await fn(); } finally { btn.disabled = false; }
@@ -847,12 +957,12 @@
 
   function sampleQuery() {
     const params = new URLSearchParams();
-    const c = $("#fCategory").value, a = $("#fAction").value, l = $("#fLimit").value;
+    const c = $("#fCategory").value, a = $("#fAction").value;
     if (c) params.set("category", c);
     if (a) params.set("action", a);
-    if (l) params.set("limit", l);
-    const q = params.toString();
-    return q ? "?" + q : "";
+    params.set("limit", sampleLimit());
+    params.set("offset", samplesOffset);
+    return "?" + params.toString();
   }
 
   async function refreshSamples(quiet) {
@@ -862,6 +972,18 @@
     return res;
   }
 
+  async function scoreForEvent(eventId) {
+    for (let attempt = 0; attempt < 6; attempt++) {
+      const res = await api("GET", API.samples("?limit=100"));
+      if (res.ok && res.body && res.body.results) {
+        const match = res.body.results.find(r => r.eventId === eventId);
+        if (match) return match.threatScore;
+      }
+      await sleep(700);
+    }
+    return null;
+  }
+
   async function evaluateAlerts(quiet) {
     const res = await api("GET", API.alertsEvaluate);
     if (!quiet) inspect(res);
@@ -869,7 +991,6 @@
     return res;
   }
 
-  // auto-refresh after ingestion (quiet — does not open the drawer)
   async function refreshDashboard() {
     await Promise.all([
       refreshSummary(true),
@@ -879,13 +1000,160 @@
     ]);
   }
 
-  // ---------- health polling ----------
+  let ruleOptions = { operators: RULE_OPERATORS, factKeys: RULE_FACT_KEYS };
+
+  async function loadRuleOptions() {
+    const res = await api("GET", API.ruleOptions);
+    if (res.ok && res.body) {
+      ruleOptions = {
+        operators: (res.body.operators || []).length ? res.body.operators : RULE_OPERATORS,
+        factKeys: (res.body.factKeys || []).length ? res.body.factKeys : RULE_FACT_KEYS
+      };
+    }
+  }
+
+  function optionSelect(cls, values, selected) {
+    const sel = document.createElement("select");
+    sel.className = "ri ri-sel " + cls;
+    const vals = (!selected || values.includes(selected)) ? values : [selected, ...values];
+    vals.forEach(v => {
+      const o = document.createElement("option");
+      o.value = v; o.textContent = v; if (v === selected) o.selected = true;
+      sel.appendChild(o);
+    });
+    return sel;
+  }
+  function textInput(cls, value, placeholder) {
+    const i = document.createElement("input");
+    i.type = "text"; i.className = "ri " + cls; i.value = value != null ? value : "";
+    if (placeholder) i.placeholder = placeholder;
+    return i;
+  }
+  function numInput(cls, value) {
+    const i = document.createElement("input");
+    i.type = "number"; i.className = "ri ri-num " + cls; i.value = value != null ? value : 0;
+    return i;
+  }
+
+  function ruleRow(rule) {
+    const isNew = !rule;
+    const tr = document.createElement("tr");
+    if (!isNew) tr.dataset.id = rule.id;
+
+    const tdId = document.createElement("td");
+    if (isNew) {
+      tdId.appendChild(textInput("ri-id", "", "(auto)"));
+    } else {
+      const idInput = textInput("ri-id", rule.id);
+      idInput.readOnly = true; idInput.title = "rule id (fixed)";
+      tdId.appendChild(idInput);
+    }
+    const tdTitle = document.createElement("td");
+    tdTitle.appendChild(textInput("ri-title", isNew ? "" : rule.title, "title"));
+    const tdFact = document.createElement("td");
+    tdFact.appendChild(optionSelect("ri-factkey", ruleOptions.factKeys, isNew ? ruleOptions.factKeys[0] : rule.factKey));
+    const tdOp = document.createElement("td");
+    tdOp.appendChild(optionSelect("ri-operator", ruleOptions.operators, isNew ? "EQUAL_TO" : rule.operator));
+    const tdOperand = document.createElement("td");
+    tdOperand.appendChild(textInput("ri-operand", isNew ? "" : rule.operand, "operand"));
+    const tdPts = document.createElement("td"); tdPts.style.textAlign = "right";
+    tdPts.appendChild(numInput("ri-output", isNew ? 10 : rule.output));
+    const tdPrio = document.createElement("td"); tdPrio.style.textAlign = "right";
+    tdPrio.appendChild(numInput("ri-priority", isNew ? 50 : rule.priority));
+    const tdOn = document.createElement("td");
+    const chk = document.createElement("input");
+    chk.type = "checkbox"; chk.className = "ri ri-enabled"; chk.checked = isNew ? true : !!rule.enabled;
+    tdOn.appendChild(chk);
+
+    const tdAct = document.createElement("td");
+    const actions = document.createElement("div"); actions.className = "row-actions";
+    const saveBtn = document.createElement("button");
+    saveBtn.type = "button"; saveBtn.className = "primary"; saveBtn.textContent = "Save";
+    saveBtn.addEventListener("click", () => busy(saveBtn, () => saveRuleRow(tr)));
+    const delBtn = document.createElement("button");
+    delBtn.type = "button"; delBtn.className = "danger"; delBtn.textContent = isNew ? "Discard" : "Delete";
+    delBtn.addEventListener("click", () => busy(delBtn, () => deleteRuleRow(tr)));
+    actions.appendChild(saveBtn); actions.appendChild(delBtn);
+    tdAct.appendChild(actions);
+
+    [tdId, tdTitle, tdFact, tdOp, tdOperand, tdPts, tdPrio, tdOn, tdAct].forEach(td => tr.appendChild(td));
+    return tr;
+  }
+
+  function renderRules(rules) {
+    const tb = $("#rules tbody");
+    tb.innerHTML = "";
+    (rules || []).forEach(r => tb.appendChild(ruleRow(r)));
+    const has = (rules || []).length > 0;
+    $("#rulesEmpty").style.display = has ? "none" : "";
+    $("#rulesCount").textContent = has ? `· ${rules.length} rule(s)` : "";
+  }
+
+  async function refreshRules(quiet) {
+    const res = await api("GET", API.rules);
+    if (!quiet) inspect(res);
+    if (res.ok) renderRules(res.body);
+    return res;
+  }
+
+  function readRuleRow(tr) {
+    const isNew = !tr.dataset.id;
+    return {
+      id: isNew ? (tr.querySelector(".ri-id").value.trim() || null) : tr.dataset.id,
+      title: tr.querySelector(".ri-title").value.trim(),
+      factKey: tr.querySelector(".ri-factkey").value,
+      operator: tr.querySelector(".ri-operator").value,
+      operand: tr.querySelector(".ri-operand").value.trim(),
+      output: parseInt(tr.querySelector(".ri-output").value, 10) || 0,
+      priority: parseInt(tr.querySelector(".ri-priority").value, 10) || 0,
+      enabled: tr.querySelector(".ri-enabled").checked
+    };
+  }
+
+  async function saveRuleRow(tr) {
+    const isNew = !tr.dataset.id;
+    const payload = readRuleRow(tr);
+    const res = isNew ? await api("POST", API.rules, payload) : await api("PUT", API.ruleById(tr.dataset.id), payload);
+    inspect(res);
+    if (res.ok) {
+      setRes("#resRules", `rule <b>${res.body.id}</b> saved — effective on the next event`, "good");
+      await refreshRules(true);
+      await refreshDashboard();
+    } else {
+      const detail = res.body && res.body.details && res.body.details[0];
+      setRes("#resRules", res.unreachable ? "<b>unreachable</b> — is enrichment up?" : `save failed <b>${res.status}</b>${detail ? " · " + detail : ""}`, "bad");
+    }
+    return res;
+  }
+
+  async function deleteRuleRow(tr) {
+    if (!tr.dataset.id) { tr.remove(); return { ok: true }; }
+    const res = await api("DELETE", API.ruleById(tr.dataset.id));
+    inspect(res);
+    if (res.ok) {
+      setRes("#resRules", `rule <b>${tr.dataset.id}</b> deleted`, "good");
+      await refreshRules(true);
+      await refreshDashboard();
+    } else {
+      setRes("#resRules", res.unreachable ? "<b>unreachable</b>" : `delete failed <b>${res.status}</b>`, "bad");
+    }
+    return res;
+  }
+
+  function addRuleRow() {
+    $("#rulesEmpty").style.display = "none";
+    const tr = ruleRow(null);
+    $("#rules tbody").appendChild(tr);
+    const title = tr.querySelector(".ri-title");
+    if (title) title.focus();
+  }
+
   function setDot(id, up) {
     const el = $("#h-" + id);
     el.className = "hdot " + (up ? "up" : "down");
   }
   async function pollHealth() {
-    const checks = [["gateway", API.gwHealth], ["analytics", API.anHealth]];
+    const checks = [["gateway", API.gwHealth], ["enrichment", API.enHealth], ["analytics", API.anHealth]];
     await Promise.all(checks.map(async ([id, path]) => {
       try {
         const r = await fetch(path);
@@ -896,7 +1164,6 @@
     }));
   }
 
-  // ---------- populate selects ----------
   function fillSelect(sel, values, blankLabel) {
     const opt0 = document.createElement("option");
     opt0.value = ""; opt0.textContent = blankLabel; sel.appendChild(opt0);
@@ -907,13 +1174,21 @@
   CATEGORIES.forEach(v => { const o = document.createElement("option"); o.value = v; o.textContent = v; $("#aCategory").appendChild(o); });
   $("#aCategory").value = "INJECTION";
 
-  // ---------- wire controls ----------
+  function plainSelect(sel, values, def) {
+    values.forEach(v => { const o = document.createElement("option"); o.value = v; o.textContent = v; $(sel).appendChild(o); });
+    $(sel).value = def;
+  }
+  plainSelect("#cSeverity", SEVERITIES, "CRITICAL");
+  plainSelect("#cCategory", CATEGORIES, "INJECTION");
+  plainSelect("#cAction", ACTIONS, "DENY");
+  plainSelect("#cMethod", METHODS, "GET");
+
   $("#btnIngest1").addEventListener("click", e => busy(e.target, () => doIngest([makeEvent()], "#resIngest", "1 event")));
   $("#btnIngest10").addEventListener("click", e => busy(e.target, () => doIngest(Array.from({ length: 10 }, () => makeEvent()), "#resIngest", "batch of 10")));
   $("#btnInvalid").addEventListener("click", e => busy(e.target, async () => {
     const bad = makeEvent();
-    bad.clientIp = "";                 // @NotBlank violation
-    bad.rule.category = "NOT_A_CATEGORY"; // bad enum
+    bad.clientIp = "";
+    bad.rule.category = "NOT_A_CATEGORY";
     const res = await api("POST", API.gwIngest, bad);
     inspect(res);
     if (res.status === 400) {
@@ -926,27 +1201,59 @@
     }
   }));
 
-  $("#btnWave").addEventListener("click", e => busy(e.target, async () => {
-    const n = Math.max(1, Math.min(500, parseInt($("#waveCount").value, 10) || 30));
-    const events = generateWave(n);
-    setRes("#resWave", `generating & sending <b>${n}</b> events…`);
+  let waveRunning = false;
+  async function sendWave(events) {
     let accepted = 0, last = null;
     const size = 25;
-    for (let i = 0; i < events.length; i += size) {
+    for (let i = 0; i < events.length && waveRunning; i += size) {
       last = await api("POST", API.gwIngest, events.slice(i, i + size));
       if (last.ok && last.body) accepted += (last.body.acceptedCount || 0);
       else break;
     }
-    inspect(last);
-    if (last && last.ok) {
-      setRes("#resWave", `wave sent · <b>${accepted}</b> / ${n} accepted — dashboard refreshed`, "good");
-      await refreshDashboard();
-    } else if (last && last.unreachable) {
-      setRes("#resWave", `<b>unreachable</b> — is the stack up?`, "bad");
-    } else {
-      setRes("#resWave", `wave failed at <b>${last ? last.status : "?"}</b> (${accepted} accepted before error)`, "bad");
+    return { accepted, last };
+  }
+
+  $("#btnWave").addEventListener("click", async e => {
+    const btn = e.target;
+    if (waveRunning) { waveRunning = false; return; }
+
+    const perWave = clampInt("#waveCount", 1, 500, 30);
+    const waves = clampInt("#waveN", 1, 20, 1);
+    const gapMs = clampInt("#waveGap", 0, 120, 3) * 1000;
+
+    waveRunning = true;
+    btn.textContent = waves > 1 ? "Stop waves" : "Stop";
+    btn.classList.remove("primary"); btn.classList.add("danger");
+    let totalAccepted = 0, last = null, completed = 0;
+    try {
+      for (let w = 1; w <= waves && waveRunning; w++) {
+        setRes("#resWave", `wave <b>${w}</b>/${waves} · sending ${perWave} events…`);
+        const r = await sendWave(generateWave(perWave));
+        last = r.last; totalAccepted += r.accepted; completed = w;
+        await refreshDashboard();
+        if (last && !last.ok) break;
+        if (w < waves && waveRunning && gapMs > 0) {
+          for (let t = gapMs; t > 0 && waveRunning; t -= 250) {
+            setRes("#resWave", `wave ${w}/${waves} done · <b>${totalAccepted}</b> accepted · next in <b>${Math.ceil(t / 1000)}s</b>`, "good");
+            await sleep(Math.min(250, t));
+          }
+        }
+      }
+      if (last) inspect(last);
+      if (last && last.unreachable) {
+        setRes("#resWave", `<b>unreachable</b> — is the stack up?`, "bad");
+      } else if (last && !last.ok) {
+        setRes("#resWave", `stopped at wave ${completed} · failed <b>${last.status}</b> (${totalAccepted} accepted)`, "bad");
+      } else {
+        const stopped = completed < waves;
+        setRes("#resWave", `${completed}/${waves} wave(s) sent · <b>${totalAccepted}</b> accepted${stopped ? " · stopped" : ""} — dashboard refreshed`, "good");
+      }
+    } finally {
+      waveRunning = false;
+      btn.textContent = "Run attack wave";
+      btn.classList.remove("danger"); btn.classList.add("primary");
     }
-  }));
+  });
 
   $("#btnStats").addEventListener("click", e => busy(e.target, async () => {
     const res = await refreshSummary(false);
@@ -960,11 +1267,18 @@
     setRes("#resStats", "all panels refreshed", "good");
   }));
 
-  $("#btnSamples").addEventListener("click", e => busy(e.target, async () => {
-    const res = await refreshSamples(false);
-    if (res.ok) setRes("#resSamples", `showing <b>${(res.body.results || []).length}</b> of <b>${res.body.total}</b>`, "good");
-    else setRes("#resSamples", res.unreachable ? "<b>unreachable</b>" : `<b>${res.status}</b>`, "bad");
-  }));
+  async function fetchSamplesPage(btn) {
+    return busy(btn, async () => {
+      const res = await refreshSamples(false);
+      if (res.ok) setRes("#resSamples", `showing <b>${(res.body.results || []).length}</b> of <b>${res.body.total}</b>`, "good");
+      else setRes("#resSamples", res.unreachable ? "<b>unreachable</b>" : `<b>${res.status}</b>`, "bad");
+      return res;
+    });
+  }
+  $("#btnSamples").addEventListener("click", e => { samplesOffset = 0; return fetchSamplesPage(e.target); });
+  $("#btnNext").addEventListener("click", e => { samplesOffset += sampleLimit(); return fetchSamplesPage(e.target); });
+  $("#btnPrev").addEventListener("click", e => { samplesOffset = Math.max(0, samplesOffset - sampleLimit()); return fetchSamplesPage(e.target); });
+  ["#fCategory", "#fAction", "#fLimit"].forEach(sel => $(sel).addEventListener("change", () => { samplesOffset = 0; }));
 
   document.querySelectorAll("[data-int]").forEach(btn => {
     btn.addEventListener("click", e => busy(e.target, async () => {
@@ -1010,23 +1324,59 @@
     setRes("#resRate", `<b>${ok}</b> ok, <b>${limited}</b> rate-limited (429)${other ? `, ${other} other` : ""}`, limited ? "bad" : "good");
   }));
 
-  // ---------- theme toggle ----------
+  $("#btnRulesReload").addEventListener("click", e => busy(e.target, async () => {
+    const res = await refreshRules(false);
+    if (res.ok) setRes("#resRules", `loaded <b>${(res.body || []).length}</b> rule(s)`, "good");
+    else setRes("#resRules", res.unreachable ? "<b>unreachable</b> — is enrichment up?" : `<b>${res.status}</b>`, "bad");
+  }));
+  $("#btnRuleAdd").addEventListener("click", () => addRuleRow());
+
+  $("#btnCustom").addEventListener("click", e => busy(e.target, async () => {
+    const country = $("#cCountry").value.trim().toUpperCase();
+    const event = makeEvent({
+      severity: $("#cSeverity").value,
+      category: $("#cCategory").value,
+      action: $("#cAction").value,
+      method: $("#cMethod").value,
+      statusCode: parseInt($("#cStatus").value, 10) || 200,
+      path: $("#cPath").value.trim() || "/",
+      clientIp: $("#cClientIp").value.trim(),
+      country: country || undefined,
+      ageMs: 0
+    });
+    setRes("#resCustom", `sending <span class="mono">${event.eventId}</span>…`);
+    const res = await api("POST", API.gwIngest, event);
+    inspect(res);
+    if (!res.ok) {
+      setRes("#resCustom", res.unreachable ? "<b>unreachable</b> — is the stack up?" : `ingest failed <b>${res.status}</b>`, "bad");
+      return;
+    }
+    setRes("#resCustom", `accepted · scoring…`, "good");
+    await refreshDashboard();
+    const score = await scoreForEvent(event.eventId);
+    if (score == null) {
+      setRes("#resCustom", `sent · score pending — hit “Fetch samples”`, "good");
+      return;
+    }
+    const facts = `sev ${event.rule.severity} · ${event.action} · ${event.path} · ${event.geoLocation.country}`;
+    setRes("#resCustom", `threat score <b style="color:${scoreColor(score)}">${score}</b> &nbsp;<span class="mono" style="color:var(--muted)">${facts}</span>`);
+  }));
+
   const prefersDark = () => window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
   $("#themeBtn").addEventListener("click", () => {
     const cur = document.documentElement.getAttribute("data-theme") || (prefersDark() ? "dark" : "light");
     const next = cur === "dark" ? "light" : "dark";
     document.documentElement.setAttribute("data-theme", next);
-    renderTimeseries(); // re-read theme tokens into the SVG
+    renderTimeseries();
   });
 
-  // ---------- resize ----------
   let rt;
   window.addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(renderTimeseries, 150); });
 
-  // ---------- boot ----------
   pollHealth();
   setInterval(pollHealth, 5000);
   (async () => {
-    await Promise.all([refreshSummary(true), refreshTimeseries("1h", true), refreshSamples(true), evaluateAlerts(true)]);
+    await loadRuleOptions();
+    await Promise.all([refreshSummary(true), refreshTimeseries("1h", true), refreshSamples(true), evaluateAlerts(true), refreshRules(true)]);
   })();
 </script>
