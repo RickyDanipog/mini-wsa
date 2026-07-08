@@ -14,6 +14,10 @@ class RuleEngineTest {
         return new Rule<>(id, "SCORING", id, priority, enabled, condition, 1);
     }
 
+    private Facts facts(Map<String, Object> values) {
+        return values::get;
+    }
+
     @Test
     void matchingReturnsMatchingEnabledRulesOrderedByPriority() {
         Rule<Integer> low = rule("low-priority", 30, true,
@@ -21,7 +25,7 @@ class RuleEngineTest {
         Rule<Integer> high = rule("high-priority", 10, true,
                 new RuleCondition("action", RuleOperator.EQUAL_TO, "DENY"));
         RuleEngine<Integer> ruleEngine = new RuleEngine<>(List.of(low, high));
-        Map<String, Object> facts = Map.of("severity", "CRITICAL", "action", "DENY");
+        Facts facts = facts(Map.of("severity", "CRITICAL", "action", "DENY"));
 
         List<Rule<Integer>> matching = ruleEngine.matching(facts);
 
@@ -36,7 +40,7 @@ class RuleEngineTest {
                 new RuleCondition("severity", RuleOperator.EQUAL_TO, "LOW"));
         RuleEngine<Integer> ruleEngine = new RuleEngine<>(List.of(matching, nonMatching));
 
-        List<Rule<Integer>> result = ruleEngine.matching(Map.of("severity", "CRITICAL"));
+        List<Rule<Integer>> result = ruleEngine.matching(facts(Map.of("severity", "CRITICAL")));
 
         assertThat(result).extracting(Rule::id).containsExactly("matching");
     }
@@ -47,7 +51,7 @@ class RuleEngineTest {
                 new RuleCondition("severity", RuleOperator.EQUAL_TO, "CRITICAL"));
         RuleEngine<Integer> ruleEngine = new RuleEngine<>(List.of(disabled));
 
-        List<Rule<Integer>> result = ruleEngine.matching(Map.of("severity", "CRITICAL"));
+        List<Rule<Integer>> result = ruleEngine.matching(facts(Map.of("severity", "CRITICAL")));
 
         assertThat(result).isEmpty();
     }
@@ -60,7 +64,7 @@ class RuleEngineTest {
         ruleEngine.register(rule("high-priority", 10, true,
                 new RuleCondition("action", RuleOperator.EQUAL_TO, "DENY")));
 
-        List<Rule<Integer>> matching = ruleEngine.matching(Map.of("severity", "CRITICAL", "action", "DENY"));
+        List<Rule<Integer>> matching = ruleEngine.matching(facts(Map.of("severity", "CRITICAL", "action", "DENY")));
 
         assertThat(matching).extracting(Rule::id).containsExactly("high-priority", "low-priority");
     }
@@ -73,7 +77,7 @@ class RuleEngineTest {
                 new RuleCondition("action", RuleOperator.EQUAL_TO, "DENY"));
         RuleEngine<Integer> ruleEngine = new RuleEngine<>(List.of(low, high));
 
-        Optional<Rule<Integer>> match = ruleEngine.evaluate(Map.of("severity", "CRITICAL", "action", "DENY"));
+        Optional<Rule<Integer>> match = ruleEngine.evaluate(facts(Map.of("severity", "CRITICAL", "action", "DENY")));
 
         assertThat(match).map(Rule::id).contains("high-priority");
     }
@@ -84,6 +88,6 @@ class RuleEngineTest {
                 new RuleCondition("severity", RuleOperator.EQUAL_TO, "CRITICAL"));
         RuleEngine<Integer> ruleEngine = new RuleEngine<>(List.of(rule));
 
-        assertThat(ruleEngine.evaluate(Map.of("severity", "LOW"))).isEmpty();
+        assertThat(ruleEngine.evaluate(facts(Map.of("severity", "LOW")))).isEmpty();
     }
 }

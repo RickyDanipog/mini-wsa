@@ -5,13 +5,13 @@ import com.akamai.wsa.contracts.RawEventMessage;
 import com.akamai.wsa.enrichment.domain.port.OffenderWindow;
 import com.akamai.wsa.enrichment.domain.port.ProcessedEventLog;
 import com.akamai.wsa.enrichment.domain.service.AttackTypeClassifier;
+import com.akamai.wsa.enrichment.domain.service.ScoringFacts;
 import com.akamai.wsa.enrichment.domain.service.ThreatScoreCalculator;
 import org.springframework.stereotype.Service;
 
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.Map;
 import java.util.Optional;
 
 @Service
@@ -47,16 +47,16 @@ public class EnrichmentService {
         long offenderEventCount = offenderWindow.countRecentEventsFromClient(
                 rawEvent.clientIp(), REPEAT_OFFENDER_WINDOW, receivedAt);
 
-        Map<String, Object> facts = Map.of(
-                "severity", rawEvent.rule().severity().name(),
-                "action", rawEvent.action().name(),
-                "category", rawEvent.rule().category().name(),
-                "path", rawEvent.path(),
-                "method", rawEvent.method(),
-                "statusCode", rawEvent.statusCode(),
-                "clientIp", rawEvent.clientIp(),
-                "offenderEventCount", offenderEventCount);
-        int threatScore = threatScoreCalculator.calculate(facts).value();
+        ScoringFacts scoringFacts = new ScoringFacts(
+                rawEvent.rule().severity().name(),
+                rawEvent.action().name(),
+                rawEvent.rule().category().name(),
+                rawEvent.path(),
+                rawEvent.method(),
+                rawEvent.statusCode(),
+                rawEvent.clientIp(),
+                offenderEventCount);
+        int threatScore = threatScoreCalculator.calculate(scoringFacts).value();
         String attackType = attackTypeClassifier.displayNameFor(rawEvent.rule().category());
 
         return Optional.of(new EnrichedEventMessage(rawEvent, attackType, threatScore, receivedAt));

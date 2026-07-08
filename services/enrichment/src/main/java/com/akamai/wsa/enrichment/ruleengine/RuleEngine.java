@@ -3,7 +3,6 @@ package com.akamai.wsa.enrichment.ruleengine;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 
 public final class RuleEngine<TOutput> {
@@ -22,13 +21,13 @@ public final class RuleEngine<TOutput> {
         rules.sort(Comparator.comparingInt(Rule::priority));
     }
 
-    public List<Rule<TOutput>> matching(Map<String, Object> facts) {
+    public List<Rule<TOutput>> matching(Facts facts) {
         return rules.stream()
                 .filter(rule -> rule.matches(facts))
                 .toList();
     }
 
-    public Optional<Rule<TOutput>> evaluate(Map<String, Object> facts) {
+    public Optional<Rule<TOutput>> evaluate(Facts facts) {
         return rules.stream()
                 .filter(rule -> rule.matches(facts))
                 .findFirst();

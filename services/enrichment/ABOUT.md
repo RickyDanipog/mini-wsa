@@ -22,7 +22,7 @@ gateway → events.raw → enrichment → events.enriched → event-store (Postg
 
 1. **Deduplicate** by `eventId` (first-sight wins), so a redelivered message is enriched at most once.
 2. **Record then read** the client IP against the sliding offender window and derive the repeat-offender flag.
-3. **Score** — build a fact map and run it through the rule engine to get the 0–100 `threatScore`.
+3. **Score** — build a typed `ScoringFacts` and run it through the rule engine to get the 0–100 `threatScore`.
 4. **Classify** — map `rule.category` to a human-readable `attackType` display name.
 5. Emit an `EnrichedEventMessage`; dropped duplicates return `Optional.empty()`.
 
@@ -31,16 +31,17 @@ gateway → events.raw → enrichment → events.enriched → event-store (Postg
 Scoring runs on a **subject-agnostic rule engine** (`ruleengine`), not on
 hand-written scoring classes. The engine is generic: a `Rule<T>` carries a
 `type` discriminator, a `RuleCondition(factKey, operator, operand)`, and an
-`output`; each `RuleCondition` tests itself against a fact map (via
+`output`; each `RuleCondition` tests itself against a `Facts` object (via
 `RuleOperator`), and a stateful `RuleEngine` — loaded with rules, then asked to
 `matching(facts)` / `evaluate(facts)` — returns the enabled rules that match.
 Scoring is simply **one
 usage** of it — rules of `type = "SCORING"` whose `output` is the points value —
 so the same engine is reusable for other rule `type`s.
 
-`EnrichmentService` builds the fact map (`severity, action, category, path,
-method, statusCode, clientIp, offenderEventCount`) and
-`RuleEngineThreatScoreCalculator` sums the points of every matched `SCORING`
+`EnrichmentService` builds a typed `ScoringFacts` (`severity, action, category,
+path, method, statusCode, clientIp, offenderEventCount`; it implements the
+engine's `Facts` interface, with `FactKey` constants single-sourcing the key
+names) and `RuleEngineThreatScoreCalculator` sums the points of every matched `SCORING`
 rule, clamped to 100. Rules are **rows, not code**: they live in a shared
 `rules` table, so a reviewer adds, edits, or disables a rule with a single SQL
 row — no code change. The store is selected by `wsa.rules` (`inmemory` serves
@@ -58,8 +59,8 @@ The default rules reproduce the matrix below, which is additive and capped:
 
 `ThreatScore` is a value object that rejects out-of-range values and exposes
 `ofCapped(...)`. The repeat-offender input is the only stateful fact: the caller
-counts recent events per IP and passes the count into the fact map, so the
-engine and evaluator themselves stay pure.
+counts recent events per IP and passes the count into `ScoringFacts` (as
+`offenderEventCount`), so the engine itself stays pure.
 
 `DefaultAttackTypeClassifier` maps `rule.category` to a display name
 (`INJECTION` → SQL/Command Injection, `XSS` → Cross-Site Scripting,

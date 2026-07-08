@@ -1,7 +1,5 @@
 package com.akamai.wsa.enrichment.ruleengine;
 
-import java.util.Map;
-
 public record Rule<TOutput>(
         String id,
         String type,
@@ -11,7 +9,7 @@ public record Rule<TOutput>(
         RuleCondition condition,
         TOutput output) {
 
-    public boolean matches(Map<String, Object> facts) {
+    public boolean matches(Facts facts) {
         return enabled && condition.matches(facts);
     }
 }

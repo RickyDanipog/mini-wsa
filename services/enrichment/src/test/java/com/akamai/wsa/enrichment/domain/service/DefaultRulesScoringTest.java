@@ -8,7 +8,6 @@ import com.akamai.wsa.enrichment.ruleengine.RuleOperator;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
-import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -18,11 +17,8 @@ class DefaultRulesScoringTest {
             new InMemoryScoringRuleRepository());
 
     private int score(String severity, String action, String path, long offenderEventCount) {
-        return calculator.calculate(Map.of(
-                "severity", severity,
-                "action", action,
-                "path", path,
-                "offenderEventCount", offenderEventCount)).value();
+        return calculator.calculate(new ScoringFacts(
+                severity, action, null, path, null, 0, null, offenderEventCount)).value();
     }
 
     @Test
@@ -74,7 +70,8 @@ class DefaultRulesScoringTest {
                         new RuleCondition("action", RuleOperator.EQUAL_TO, "DENY"), 50));
         ThreatScoreCalculator overflowing = new RuleEngineThreatScoreCalculator(inflatedRepository);
 
-        int total = overflowing.calculate(Map.of("severity", "CRITICAL", "action", "DENY")).value();
+        int total = overflowing.calculate(new ScoringFacts(
+                "CRITICAL", "DENY", null, null, null, 0, null, 0)).value();
 
         assertThat(total).isEqualTo(100);
     }

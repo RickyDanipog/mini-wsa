@@ -9,7 +9,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class RuleOperatorTest {
 
     private boolean matches(Map<String, Object> facts, String factKey, RuleOperator operator, String operand) {
-        return new RuleCondition(factKey, operator, operand).matches(facts);
+        return new RuleCondition(factKey, operator, operand).matches(facts::get);
     }
 
     @Test
