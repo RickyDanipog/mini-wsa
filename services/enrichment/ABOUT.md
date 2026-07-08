@@ -22,15 +22,29 @@ gateway → events.raw → enrichment → events.enriched → event-store (Postg
 
 1. **Deduplicate** by `eventId` (first-sight wins), so a redelivered message is enriched at most once.
 2. **Record then read** the client IP against the sliding offender window and derive the repeat-offender flag.
-3. **Score** — compute the 0–100 `threatScore` from the composable rules.
+3. **Score** — build a fact map and run it through the rule engine to get the 0–100 `threatScore`.
 4. **Classify** — map `rule.category` to a human-readable `attackType` display name.
 5. Emit an `EnrichedEventMessage`; dropped duplicates return `Optional.empty()`.
 
 ## Threat scoring
 
-Scoring is additive and clamped to 100. Each contribution is a standalone
-`ScoringRule`, composed by `RuleBasedThreatScoreCalculator`, so the matrix is
-unit-testable in isolation and easy to extend.
+Scoring runs on a **subject-agnostic rule engine** (`ruleengine`), not on
+hand-written scoring classes. The engine is generic: a `Rule<T>` carries a
+`type` discriminator, a `RuleCondition(factKey, operator, operand)`, and an
+`output`; `RuleEvaluator` tests one condition against a fact map and
+`RuleEngine` returns the enabled rules that match. Scoring is simply **one
+usage** of it — rules of `type = "SCORING"` whose `output` is the points value —
+so the same engine is reusable for other rule `type`s.
+
+`EnrichmentService` builds the fact map (`severity, action, category, path,
+method, statusCode, clientIp, offenderEventCount`) and
+`RuleEngineThreatScoreCalculator` sums the points of every matched `SCORING`
+rule, clamped to 100. Rules are **rows, not code**: they live in a shared
+`rules` table, so a reviewer adds, edits, or disables a rule with a single SQL
+row — no code change. The store is selected by `wsa.rules` (`inmemory` serves
+the 8 built-in defaults; `postgres` creates + seeds and reads the `rules` table).
+
+The default rules reproduce the matrix below, which is additive and capped:
 
 | Component | Contribution |
 |-----------|--------------|
@@ -40,10 +54,10 @@ unit-testable in isolation and easy to extend.
 | Repeat offender | more than 5 events from the same `clientIp` in the last 10 min → +15 |
 | Cap | total clamped to `100` (highest actually reachable is **90**) |
 
-The scorer is a **pure function**: the repeat-offender flag is computed by the
-caller and injected through `ThreatScoringInputs`, so no rule touches state.
 `ThreatScore` is a value object that rejects out-of-range values and exposes
-`ofCapped(...)`.
+`ofCapped(...)`. The repeat-offender input is the only stateful fact: the caller
+counts recent events per IP and passes the count into the fact map, so the
+engine and evaluator themselves stay pure.
 
 `DefaultAttackTypeClassifier` maps `rule.category` to a display name
 (`INJECTION` → SQL/Command Injection, `XSS` → Cross-Site Scripting,
@@ -90,14 +104,16 @@ Spring/Kafka/Redis — pure classes wired to beans in
 `infrastructure/config/EnrichmentConfiguration`.
 
 ```
+ruleengine/       RuleOperator, RuleCondition, Rule<T>, RuleEvaluator, RuleEngine (subject-agnostic)
 domain/
   model/          AttackType, ThreatScore (capped value object)
-  port/           OffenderWindow, ProcessedEventLog (driven ports)
-  service/        ScoringRule + Severity/Action/SensitivePath/RepeatOffender rules,
-                  RuleBasedThreatScoreCalculator, DefaultAttackTypeClassifier, ThreatScoringInputs
+  port/           OffenderWindow, ProcessedEventLog, ScoringRuleRepository (driven ports)
+  service/        RuleEngineThreatScoreCalculator, DefaultAttackTypeClassifier
 application/      EnrichmentService (dedup → window → score → classify)
 infrastructure/
-  config/         EnrichmentConfiguration (bean wiring), RedisStorageConfiguration
+  config/         EnrichmentConfiguration (bean wiring), RuleEngineConfiguration,
+                  RedisStorageConfiguration, RulesStorageAutoConfigurationFilter
+  rules/          DefaultScoringRules, InMemoryScoringRuleRepository, PostgresScoringRuleRepository
   window/         InMemoryOffenderWindow, RedisOffenderWindow (sorted set)
   dedup/          InMemoryProcessedEventLog, RedisProcessedEventLog (SETNX)
   messaging/      EnrichedEventPublisher
