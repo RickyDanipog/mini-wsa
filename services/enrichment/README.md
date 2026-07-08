@@ -14,17 +14,35 @@ See the root [`../../README.md`](../../README.md) for the full architecture.
 - Consume `MessageEnvelope<RawEventMessage>` from `events.raw` and deserialize the enveloped generic type.
 - Deduplicate by `eventId` (first-sight wins) so a redelivered message is enriched at most once.
 - Classify `rule.category` → a human-readable `attackType` display name.
-- Compute the deterministic `threatScore` (0–100) from composable scoring rules.
+- Compute the deterministic `threatScore` (0–100) from a data-driven rule engine.
 - Maintain a per-IP sliding window and flag repeat offenders.
 - Publish `MessageEnvelope<EnrichedEventMessage>` to `events.enriched`, keyed by `configId`.
 - No business REST API — only a health/ping surface.
 
 ## Threat scoring
 
-Scoring is additive and capped at 100. Each contribution is a standalone
-`ScoringRule` (`SeverityRule`, `ActionRule`, `SensitivePathRule`,
-`RepeatOffenderRule`) composed by `RuleBasedThreatScoreCalculator`, so the
-matrix is unit-testable in isolation and easy to extend.
+Scoring is additive and capped at 100, but it is no longer hand-written Java
+classes. It runs on a **subject-agnostic rule engine** (`ruleengine`:
+`RuleOperator`, `RuleCondition(factKey, operator, operand)`, a generic
+`Rule<T>` carrying a `type` discriminator, and a stateful `RuleEngine` you load
+rules into and evaluate — matching lives on `RuleOperator`/`RuleCondition`).
+Scoring is just one **usage** of that engine — rules of `type = "SCORING"`
+whose `output` is the points value. Facts are **generically path-resolved**:
+`JacksonFactsFactory` turns the `RawEventMessage` into a nested `Map` view (via
+the application `ObjectMapper`, so enums become their names and nested objects
+like `rule`/`geoLocation` become nested maps), adds the derived
+`offenderEventCount`, and wraps it in `MapFacts`. `MapFacts` resolves a
+`factKey` as a **dotted path** — it splits on `.` and walks the nested maps, so
+`rule.severity` and `geoLocation.country` resolve with no per-key code. A rule
+can therefore reference **any event field, nested included**, and
+`RuleEngine` evaluates each enabled rule's `(fact_key, operator, operand)`
+against it while `RuleEngineThreatScoreCalculator` sums the matched rules'
+points (clamped to 100). The one tradeoff: a mistyped or nonexistent path
+silently resolves to `null` and simply does not match — there is no error for a
+bad key. The engine is generic, so the same machinery can drive other rule
+`type`s later.
+
+The default rules reproduce the exact matrix below:
 
 | Component | Contribution |
 |-----------|--------------|
@@ -33,6 +51,28 @@ matrix is unit-testable in isolation and easy to extend.
 | Sensitive path | path contains `/admin` or `/login` → +15 |
 | Repeat offender | more than 5 events from the same `clientIp` in the last 10 minutes → +15 |
 | Cap | total clamped to `100` |
+
+### Editing rules
+
+Rules are **rows, not code**. They live in a shared `rules` table
+(`id, type, title, fact_key, operator, operand, output, priority, enabled`), so
+a reviewer adds, edits, or disables a scoring rule with a single SQL row — no
+code change, no rebuild. Scoring rows carry `type = 'SCORING'` and put the
+points in `output`. Because facts are resolved by dotted path, the `fact_key`
+is just the path to any event field — nested fields included. Adding a "requests
+from China are worth 5 points" rule is one insert that references the nested
+`geoLocation.country` path, with no code change:
+
+```sql
+INSERT INTO rules (id, type, title, fact_key, operator, operand, output, priority, enabled)
+VALUES ('geo-cn', 'SCORING', 'China origin', 'geoLocation.country', 'EQUAL_TO', 'CN', '5', 50, true);
+```
+
+Rule storage is chosen by `wsa.rules`: **`inmemory`** (default) serves the 8
+built-in default rules above; **`postgres`** creates and seeds the `rules`
+table with those same 8 defaults and then reads them (and any rows you add)
+from Postgres. Postgres JDBC auto-configuration is gated by an
+`AutoConfigurationImportFilter`, so an `inmemory` run opens no DB connection.
 
 `attackType` classification (`rule.category` → display name), via `DefaultAttackTypeClassifier`:
 
@@ -73,9 +113,11 @@ HTTP (operational only):
 | `spring.kafka.consumer.group-id` | `enrichment` | consumer group |
 | `wsa.topics.events-raw` | `events.raw` | inbound topic |
 | `wsa.topics.events-enriched` | `events.enriched` | outbound topic |
-| `wsa.storage` (`WSA_STORAGE`) | `inmemory` | `inmemory` or `redis` |
+| `wsa.storage` (`WSA_STORAGE`) | `inmemory` | offender window + dedup store: `inmemory` or `redis` |
 | `spring.data.redis.host` (`SPRING_DATA_REDIS_HOST`) | `localhost` | only read when `wsa.storage=redis` |
 | `spring.data.redis.port` (`SPRING_DATA_REDIS_PORT`) | `6379` | only read when `wsa.storage=redis` |
+| `wsa.rules` (`WSA_RULES`) | `inmemory` | scoring-rule store: `inmemory` (built-in defaults) or `postgres` (`rules` table) |
+| `spring.datasource.url` (`SPRING_DATASOURCE_URL`) | — | only read when `wsa.rules=postgres`, e.g. `jdbc:postgresql://postgres:5432/wsa` |
 
 Redis auto-configuration is excluded in `application.yml` and only wired up
 (via `RedisStorageConfiguration`, gated by `@ConditionalOnProperty`) when
@@ -120,15 +162,18 @@ integration tests require a running Docker daemon.
 Hexagonal packages under `com.akamai.wsa.enrichment`:
 
 ```
+ruleengine/       RuleOperator, RuleCondition, Rule<T> (type-tagged),
+                  RuleEngine (stateful; subject-agnostic)
 domain/
   model/          AttackType, ThreatScore (capped value object)
-  port/           OffenderWindow, ProcessedEventLog (driven ports)
-  service/        ScoringRule + Severity/Action/SensitivePath/RepeatOffender rules,
-                  RuleBasedThreatScoreCalculator, DefaultAttackTypeClassifier,
-                  ThreatScoringInputs
+  port/           OffenderWindow, ProcessedEventLog, ScoringRuleRepository (driven ports)
+  service/        RuleEngineThreatScoreCalculator, DefaultAttackTypeClassifier
 application/      EnrichmentService (orchestrates dedup → window → score → classify)
 infrastructure/
-  config/         EnrichmentConfiguration (bean wiring), RedisStorageConfiguration
+  config/         EnrichmentConfiguration (bean wiring), RuleEngineConfiguration,
+                  RedisStorageConfiguration, RulesStorageAutoConfigurationFilter
+  rules/          DefaultScoringRules (the 8 defaults), InMemoryScoringRuleRepository,
+                  PostgresScoringRuleRepository (creates + seeds the rules table)
   window/         InMemoryOffenderWindow, RedisOffenderWindow (sorted set)
   dedup/          InMemoryProcessedEventLog, RedisProcessedEventLog (SETNX)
   messaging/      EnrichedEventPublisher

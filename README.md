@@ -233,9 +233,13 @@ curl -s "localhost:8084/v1/events/samples?category=INJECTION&limit=1"
 
 ## Threat scoring
 
-Scoring is deterministic and additive, capped at 100. It is implemented as a set
-of composable rule objects in the enrichment service (each a `ScoringRule`), so
-the matrix is unit-testable in isolation and easy to extend.
+Scoring is deterministic and additive, capped at 100. It is driven by a small
+**data-driven rule engine** in the enrichment service: rules are rows (not code)
+of `type = "SCORING"` — `(fact_key, operator, operand) → points` — that the engine
+sums over the matched rules. The default rules reproduce the matrix below, and a
+reviewer can add/edit/disable one with a single SQL row (no code change). Storage
+is `wsa.rules=inmemory` (the built-in defaults) or `postgres` (a seeded `rules`
+table). The engine itself is subject-agnostic — scoring is just one rule `type`.
 
 | Component | Contribution |
 |-----------|--------------|

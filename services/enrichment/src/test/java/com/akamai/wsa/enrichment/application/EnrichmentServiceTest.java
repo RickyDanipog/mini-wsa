@@ -7,17 +7,19 @@ import com.akamai.wsa.contracts.GeoLocationMessage;
 import com.akamai.wsa.contracts.RawEventMessage;
 import com.akamai.wsa.contracts.RuleMessage;
 import com.akamai.wsa.contracts.Severity;
+import com.akamai.wsa.enrichment.domain.port.FactsFactory;
 import com.akamai.wsa.enrichment.domain.port.OffenderWindow;
 import com.akamai.wsa.enrichment.domain.port.ProcessedEventLog;
-import com.akamai.wsa.enrichment.domain.service.ActionRule;
+import com.akamai.wsa.enrichment.domain.port.ScoringRuleRepository;
 import com.akamai.wsa.enrichment.domain.service.DefaultAttackTypeClassifier;
-import com.akamai.wsa.enrichment.domain.service.RepeatOffenderRule;
-import com.akamai.wsa.enrichment.domain.service.RuleBasedThreatScoreCalculator;
-import com.akamai.wsa.enrichment.domain.service.SensitivePathRule;
-import com.akamai.wsa.enrichment.domain.service.SeverityRule;
+import com.akamai.wsa.enrichment.domain.service.RuleEngineThreatScoreCalculator;
 import com.akamai.wsa.enrichment.domain.service.ThreatScoreCalculator;
 import com.akamai.wsa.enrichment.infrastructure.dedup.InMemoryProcessedEventLog;
+import com.akamai.wsa.enrichment.infrastructure.rules.InMemoryScoringRuleRepository;
+import com.akamai.wsa.enrichment.infrastructure.rules.JacksonFactsFactory;
 import com.akamai.wsa.enrichment.infrastructure.window.InMemoryOffenderWindow;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -25,7 +27,6 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
-import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -35,8 +36,10 @@ class EnrichmentServiceTest {
     private static final Instant FIXED_NOW = Instant.parse("2026-05-20T14:32:11Z");
 
     private final Clock fixedClock = Clock.fixed(FIXED_NOW, ZoneOffset.UTC);
-    private final ThreatScoreCalculator calculator = new RuleBasedThreatScoreCalculator(List.of(
-            new SeverityRule(), new ActionRule(), new SensitivePathRule(), new RepeatOffenderRule()));
+    private final ScoringRuleRepository scoringRuleRepository = new InMemoryScoringRuleRepository();
+    private final ThreatScoreCalculator calculator = new RuleEngineThreatScoreCalculator(scoringRuleRepository);
+    private final FactsFactory factsFactory = new JacksonFactsFactory(
+            new ObjectMapper().registerModule(new JavaTimeModule()));
 
     private OffenderWindow offenderWindow;
     private ProcessedEventLog processedEventLog;
@@ -47,7 +50,8 @@ class EnrichmentServiceTest {
         offenderWindow = new InMemoryOffenderWindow();
         processedEventLog = new InMemoryProcessedEventLog();
         service = new EnrichmentService(
-                fixedClock, processedEventLog, offenderWindow, new DefaultAttackTypeClassifier(), calculator);
+                fixedClock, processedEventLog, offenderWindow, new DefaultAttackTypeClassifier(), calculator,
+                factsFactory);
     }
 
     private RawEventMessage rawEvent(String eventId) {

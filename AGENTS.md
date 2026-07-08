@@ -128,9 +128,10 @@ We stay close to DDD. Concretely:
   PROTOCOL_VIOLATION, DATA_LEAKAGE, BOT, DOS, RATE_LIMIT), `Action`
   (DENY, ALERT, MONITOR), `Severity` (CRITICAL, HIGH, MEDIUM, LOW).
 - **Domain services (stateless interfaces):** `AttackTypeClassifier`
-  (`classify`), `ThreatScoreCalculator` (`calculate`, pure — offender flag
-  injected via `ThreatScoringInputs`). Business rules live here, not in
-  controllers or entities-as-anemic-bags.
+  (`classify`) and `ThreatScoreCalculator` (`calculate(facts)`, pure). Scoring is
+  driven by a subject-agnostic rule engine (`ruleengine`: `RuleOperator`,
+  `RuleCondition`, generic `Rule<T>`, `RuleEngine`); scoring rules are data
+  (`type='SCORING'` rows), not code. Business rules live here, not in controllers.
 - **Ports (domain-owned interfaces), two of them:** `EventStore` (`saveAll`,
   `countAll`, `findByConfigId`, and later `summarize`, `findSamples`) and
   `OffenderWindow` (`countRecentEventsFromClient`) — named in the ubiquitous
