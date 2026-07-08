@@ -26,8 +26,10 @@ out/
 # --- Logs ---
 *.log
 
-# --- Local tooling config (root only; per-service .claude/ is tracked) ---
-/.claude/
+# --- Local tooling config: ignore root .claude/ EXCEPT the shared skills ---
+# (per-service .claude/ is tracked; skills are shipped so a cloner can use them)
+/.claude/*
+!/.claude/skills/
 
 # --- Personal, local-only notes (never pushed) ---
 *.local.md
