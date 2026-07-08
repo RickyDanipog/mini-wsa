@@ -5,7 +5,12 @@
 > serving us, change it here first, then follow it.
 >
 > Design context lives in `docs/`:
-> `01-requirements.md` · `02-effort-estimate.md` · `03-sdd.md`. Read them first.
+> `01-requirements.md` · `03-sdd.md` · `storage-benchmark.md`. Read them first.
+>
+> **Per-service context lives in each `services/<name>/ABOUT.md`** (what the service
+> does, its contracts, its conventions) — read a service's `ABOUT.md` and `README.md`
+> before changing it. The shared cross-service contract and its change log are
+> `services/contracts/ABOUT.md` and `services/contracts/CHANGELOG.md`.
 
 ---
 
@@ -28,7 +33,7 @@ stores them, and serves analytics APIs. Backend only, Java + Spring Boot.
 | Language | **Java 21 (LTS)** | records, sealed types, pattern matching, switch expressions |
 | Framework | **Spring Boot 3.x** | Web, Validation, Actuator, Test |
 | Build | **Maven** (multi-module) | root aggregator + one module per service |
-| Storage | **Mongo + Redis** (see `03-sdd.md` §7) | two ports: `EventStore` (Mongo) + `OffenderWindow` (Mongo→Redis). In-memory adapters now; **PostgreSQL** built as a load-test comparison; ClickHouse is words-only. Domain never changes. **Active adapter is selected per service by the `wsa.storage` property** (`inmemory` default via `@ConditionalOnProperty(matchIfMissing=true)`; each new adapter is gated on its own value — `mongo`/`postgres`/`redis` — so all coexist and exactly one is active). |
+| Storage | **PostgreSQL + Redis** (see `03-sdd.md` §7 + `storage-benchmark.md`) | two ports: `EventStore` (PostgreSQL) + `OffenderWindow` (Redis). In-memory adapters are the default for dev/tests. MongoDB was benchmarked and dropped (preserved on the `candidate/mongo-store` branch). Domain never changes. **The active adapter is selected per service by the `wsa.storage` property** (`inmemory` default via `@ConditionalOnProperty(matchIfMissing=true)`; `postgres`/`redis` gated on their own values; DB auto-config gated by an `AutoConfigurationImportFilter` so a non-matching mode opens no connection). |
 | Containers | **Docker + Docker Compose** | `docker compose up` brings up full stack |
 | IDE | **IntelliJ IDEA CE** | Maven-native; import root `pom.xml` |
 | Tests | JUnit 5 · Spring Boot Test / MockMvc · **Testcontainers** | real storage in integration tests |
@@ -37,24 +42,23 @@ stores them, and serves analytics APIs. Backend only, Java + Spring Boot.
 
 ## 2. Repository Layout (mono-repo of services)
 
-> **v2 (distributed).** The `mini-wsa` monolith is being decomposed into 5
-> services + a shared `contracts` module (see `03-sdd.md` v2 and the
-> `2026-07-07-v2-restructure.md` plan). The monolith code is being relocated,
-> not rewritten.
+> **Distributed.** The system is 5 services + a shared `contracts` module
+> (see `03-sdd.md`). An earlier single-process `mini-wsa` monolith was
+> decomposed into these services and no longer exists.
 
 ```
 WSA/
 ├── AGENTS.md                  ← you are here
 ├── README.md                  ← assignment-facing (build/run, API, architecture)
-├── docs/                      ← requirements, effort, SDD (v2)
-├── docker-compose.yml         ← full stack: kafka + mongo + redis + the 4 services
+├── docs/                      ← requirements, SDD, storage benchmark
+├── docker-compose.yml         ← full stack: kafka + postgres + redis + the 4 services
 ├── pom.xml                    ← root Maven aggregator / parent
 └── services/
     ├── contracts/             ← shared Kafka message schemas + envelope (no runtime)
     ├── gateway/               ← :8081 REST ingest → validate/transform → publish events.raw
     ├── enrichment/            ← :8082 consume events.raw → classify+score (Redis window) → publish events.enriched
-    ├── event-store/           ← :8083 consume events.enriched → persist (Mongo, system of record)
-    ├── analytics/             ← :8084 read Mongo replica → serve /v1/stats/*, /v1/events/samples
+    ├── event-store/           ← :8083 consume events.enriched → persist (PostgreSQL, system of record)
+    ├── analytics/             ← :8084 read PostgreSQL (read-only) → serve /v1/stats/*, /v1/events/samples
     └── event-generator/       ← CLI tool: realistic events + attack waves; feeds gateway
 ```
 
@@ -62,11 +66,11 @@ WSA/
   `Dockerfile`, wired together by the root `docker-compose.yml`.
 - Services communicate only via **Kafka topics** (write path) and the shared
   **`contracts`** module (schemas) — never by importing each other's internals.
-  Read path: `analytics` reads a Mongo replica of `event-store`'s data.
-- The `mini-wsa` monolith has been retired (Phase 0 Task 5); its enums live in
-  `contracts` and each service owns its domain. A thin end-to-end pipeline runs
-  over Kafka; per-service business logic is implemented next from each service's
-  `.claude/plans/plan.md`.
+  Read path: `analytics` reads `event-store`'s PostgreSQL data read-only (a read replica in production).
+- The `mini-wsa` monolith has been retired; its enums live in
+  `contracts` and each service owns its domain. The end-to-end pipeline runs over
+  Kafka; each service's business logic lives behind its ports — see that service's
+  `README.md` and `ABOUT.md`.
 
 ---
 
@@ -227,16 +231,16 @@ We stay close to DDD. Concretely:
 
 - Import the **root `pom.xml`** into IntelliJ (all modules load).
 - Build all: `mvn -q clean verify` from repo root.
-- Run a service locally: `mvn -pl services/mini-wsa spring-boot:run`.
+- Run one service locally: `mvn -pl services/gateway spring-boot:run` (swap the module name for any service).
 - Full stack: `docker compose up` (app + storage + any bonus deps).
 - Concrete commands land in `README.md` as they're implemented.
 
 ---
 
-## 11. Open Decisions (resolve before/at implementation start)
+## 11. Resolved Decisions
 
-Tracked in `docs/03-sdd.md` §13:
-1. ~~**Storage engine**~~ — **RESOLVED:** in-memory adapter first (dry runs); real DBs load-tested behind the port later.
-2. **Repeat-offender basis** — event `timestamp` vs `receivedAt`; count vs persisted events only.
-3. **Batch failure semantics** — partial-accept (recommended) vs all-or-nothing.
-4. **Bonus selection** — recommended B3 (time-series) + B4 (rate limit); B1 stretch; B2 last.
+These were open during design (`docs/03-sdd.md` §13); all are now settled by what shipped:
+1. **Storage engine** — **PostgreSQL** for the event store + analytics, chosen after a head-to-head benchmark (`docs/storage-benchmark.md`); **Redis** for the offender window; in-memory adapters remain the dev/test default. MongoDB was evaluated and dropped (preserved on `candidate/mongo-store`).
+2. **Repeat-offender basis** — counted on **`receivedAt`** (server clock), record-then-read, over all events recorded for the IP within the 10-minute window (not only persisted ones).
+3. **Batch failure semantics** — **all-or-nothing**: any invalid event rejects the whole batch (missing-field cases return per-field detail).
+4. **Bonuses** — **B2 (Kafka streaming)** is the core architecture (shipped); **B4 (rate limiting)** ships on the `bonuses` branch; **B3 (time-series)** and **B1 (alerting)** are not built (see the README's "what I'd improve").

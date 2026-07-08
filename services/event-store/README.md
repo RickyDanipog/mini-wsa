@@ -47,7 +47,7 @@ event-store **owns** schema/index creation (Postgres DDL) and is the **sole
 writer**; analytics reads the same store **read-only** (a stand-in for a read
 replica). The shared table shape is a cross-service contract — see the "Shared
 Postgres `events` table" section in
-[`../contracts/.claude/context.md`](../contracts/.claude/context.md).
+[`../contracts/ABOUT.md`](../contracts/ABOUT.md).
 Indexes created: `{configId, timestamp desc}`, `{clientIp, timestamp desc}`,
 `{timestamp desc}`.
 
@@ -115,7 +115,7 @@ infrastructure/
 ## Contracts
 
 Message and store shapes are defined in [`../contracts`](../contracts) (see
-[`../contracts/.claude/context.md`](../contracts/.claude/context.md)). Two things
+[`../contracts/ABOUT.md`](../contracts/ABOUT.md)). Two things
 to keep in mind:
 
 - **`EnrichedEventMessage` is nested** — the original event fields live under

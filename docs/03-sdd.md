@@ -1,7 +1,7 @@
 # Mini WSA — Software Design Document (SDD)
 
 > Status: **v2 — distributed services** · Date: 2026-07-07 · Owner: Ricky
-> Companion to `01-requirements.md` and `02-effort-estimate.md`.
+> Companion to `01-requirements.md` and `storage-benchmark.md`.
 >
 > **This v2 supersedes the earlier single-service (`mini-wsa` monolith) design.**
 > Mini WSA is now an **event-driven pipeline of 5 independent services** connected

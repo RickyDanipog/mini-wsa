@@ -8,7 +8,7 @@ and **event-generator**. This is the one module under `services/` you do **not**
 run standalone — there is nothing to start, only something to build against.
 
 Base package `com.akamai.wsa.contracts`. The authoritative, always-current
-version of everything below lives in [`.claude/context.md`](.claude/context.md);
+version of everything below lives in [`ABOUT.md`](ABOUT.md);
 this README is its public-facing summary.
 
 ## Message types
@@ -73,14 +73,14 @@ production. This shape is a cross-service contract, same rule as the Kafka schem
 - MongoDB was an evaluated storage candidate (its collection contract lived here);
   Postgres won the benchmark, so the Mongo adapter now lives on the `candidate/mongo-store` branch.
 
-Full field list and DDL: [`.claude/context.md`](.claude/context.md).
+Full field list and DDL: [`ABOUT.md`](ABOUT.md).
 
 ## Changing a contract
 
 Contracts are shared context across every service. When you change any type here:
 
-1. Update [`.claude/context.md`](.claude/context.md) (the source of truth).
-2. Append a dated entry to [`.claude/CHANGELOG.md`](.claude/CHANGELOG.md) — what
+1. Update [`ABOUT.md`](ABOUT.md) (the source of truth).
+2. Append a dated entry to [`CHANGELOG.md`](CHANGELOG.md) — what
    changed, which services are affected, required follow-up.
 3. Re-check every affected service against the new shape before it ships.
 
