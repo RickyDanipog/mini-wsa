@@ -27,14 +27,20 @@ classes. It runs on a **subject-agnostic rule engine** (`ruleengine`:
 `Rule<T>` carrying a `type` discriminator, and a stateful `RuleEngine` you load
 rules into and evaluate — matching lives on `RuleOperator`/`RuleCondition`).
 Scoring is just one **usage** of that engine — rules of `type = "SCORING"`
-whose `output` is the points value. `EnrichmentService` builds a typed
-`EventFacts` that **wraps the `RawEventMessage`** plus the derived
-`offenderEventCount` — it implements the engine's agnostic `Facts` interface,
-resolving each `FactKey` straight off the wrapped event — and `RuleEngine`
-evaluates each enabled rule's
-`(fact_key, operator, operand)` against it, and `RuleEngineThreatScoreCalculator`
-sums the matched rules' points (clamped to 100). The engine is generic, so the
-same machinery can drive other rule `type`s later.
+whose `output` is the points value. Facts are **generically path-resolved**:
+`JacksonFactsFactory` turns the `RawEventMessage` into a nested `Map` view (via
+the application `ObjectMapper`, so enums become their names and nested objects
+like `rule`/`geoLocation` become nested maps), adds the derived
+`offenderEventCount`, and wraps it in `MapFacts`. `MapFacts` resolves a
+`factKey` as a **dotted path** — it splits on `.` and walks the nested maps, so
+`rule.severity` and `geoLocation.country` resolve with no per-key code. A rule
+can therefore reference **any event field, nested included**, and
+`RuleEngine` evaluates each enabled rule's `(fact_key, operator, operand)`
+against it while `RuleEngineThreatScoreCalculator` sums the matched rules'
+points (clamped to 100). The one tradeoff: a mistyped or nonexistent path
+silently resolves to `null` and simply does not match — there is no error for a
+bad key. The engine is generic, so the same machinery can drive other rule
+`type`s later.
 
 The default rules reproduce the exact matrix below:
 
@@ -52,12 +58,14 @@ Rules are **rows, not code**. They live in a shared `rules` table
 (`id, type, title, fact_key, operator, operand, output, priority, enabled`), so
 a reviewer adds, edits, or disables a scoring rule with a single SQL row — no
 code change, no rebuild. Scoring rows carry `type = 'SCORING'` and put the
-points in `output`. Adding a "bot category is worth 25 points" rule is one
-insert:
+points in `output`. Because facts are resolved by dotted path, the `fact_key`
+is just the path to any event field — nested fields included. Adding a "requests
+from China are worth 5 points" rule is one insert that references the nested
+`geoLocation.country` path, with no code change:
 
 ```sql
 INSERT INTO rules (id, type, title, fact_key, operator, operand, output, priority, enabled)
-VALUES ('category-bot', 'SCORING', 'Bot category', 'category', 'EQUAL_TO', 'BOT', '25', 50, true);
+VALUES ('geo-cn', 'SCORING', 'China origin', 'geoLocation.country', 'EQUAL_TO', 'CN', '5', 50, true);
 ```
 
 Rule storage is chosen by `wsa.rules`: **`inmemory`** (default) serves the 8

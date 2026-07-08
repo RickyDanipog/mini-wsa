@@ -22,7 +22,7 @@ gateway → events.raw → enrichment → events.enriched → event-store (Postg
 
 1. **Deduplicate** by `eventId` (first-sight wins), so a redelivered message is enriched at most once.
 2. **Record then read** the client IP against the sliding offender window and derive the repeat-offender flag.
-3. **Score** — build a typed `EventFacts` (wrapping the raw event) and run it through the rule engine to get the 0–100 `threatScore`.
+3. **Score** — build path-resolved `Facts` from the raw event (via `FactsFactory`) and run them through the rule engine to get the 0–100 `threatScore`.
 4. **Classify** — map `rule.category` to a human-readable `attackType` display name.
 5. Emit an `EnrichedEventMessage`; dropped duplicates return `Optional.empty()`.
 
@@ -38,15 +38,23 @@ Scoring is simply **one
 usage** of it — rules of `type = "SCORING"` whose `output` is the points value —
 so the same engine is reusable for other rule `type`s.
 
-`EnrichmentService` builds a typed `EventFacts` that **wraps the
-`RawEventMessage`** plus the derived `offenderEventCount`; it implements the
-engine's `Facts` interface, reading each fact straight off the wrapped event,
-with `FactKey` constants single-sourcing the key
-names, and `RuleEngineThreatScoreCalculator` sums the points of every matched `SCORING`
+Facts are **generically path-resolved**, with no per-key code. The
+`FactsFactory` port turns a `RawEventMessage` (plus the derived
+`offenderEventCount`) into `Facts`; its `JacksonFactsFactory` implementation
+uses the application `ObjectMapper` to produce a nested `Map` view of the event
+(enums become their names, nested objects like `rule`/`geoLocation` become
+nested maps) and wraps it in `MapFacts`. `MapFacts` resolves a `factKey` as a
+**dotted path**, splitting on `.` and walking the nested maps — so
+`rule.severity` and `geoLocation.country` resolve straight through, and
+`FactKey` constants single-source the paths used by the defaults. A rule can
+reference **any event field, nested included**; the only tradeoff is that a
+wrong path silently resolves to `null` and does not match.
+`RuleEngineThreatScoreCalculator` sums the points of every matched `SCORING`
 rule, clamped to 100. Rules are **rows, not code**: they live in a shared
 `rules` table, so a reviewer adds, edits, or disables a rule with a single SQL
-row — no code change. The store is selected by `wsa.rules` (`inmemory` serves
-the 8 built-in defaults; `postgres` creates + seeds and reads the `rules` table).
+row referencing a path — no code change. The store is selected by `wsa.rules`
+(`inmemory` serves the 8 built-in defaults; `postgres` creates + seeds and reads
+the `rules` table).
 
 The default rules reproduce the matrix below, which is additive and capped:
 
@@ -60,8 +68,8 @@ The default rules reproduce the matrix below, which is additive and capped:
 
 `ThreatScore` is a value object that rejects out-of-range values and exposes
 `ofCapped(...)`. The repeat-offender input is the only stateful fact: the caller
-counts recent events per IP and passes the count into `EventFacts` (as
-`offenderEventCount`), so the engine itself stays pure.
+counts recent events per IP and passes the count into the `FactsFactory` (as the
+derived `offenderEventCount`), so the engine itself stays pure.
 
 `DefaultAttackTypeClassifier` maps `rule.category` to a display name
 (`INJECTION` → SQL/Command Injection, `XSS` → Cross-Site Scripting,

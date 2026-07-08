@@ -1,13 +1,16 @@
 package com.akamai.wsa.enrichment.domain.service;
 
 import com.akamai.wsa.enrichment.domain.port.ScoringRuleRepository;
+import com.akamai.wsa.enrichment.infrastructure.rules.DefaultScoringRules;
 import com.akamai.wsa.enrichment.infrastructure.rules.InMemoryScoringRuleRepository;
 import com.akamai.wsa.enrichment.ruleengine.Facts;
+import com.akamai.wsa.enrichment.ruleengine.MapFacts;
 import com.akamai.wsa.enrichment.ruleengine.Rule;
 import com.akamai.wsa.enrichment.ruleengine.RuleCondition;
 import com.akamai.wsa.enrichment.ruleengine.RuleOperator;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -19,14 +22,28 @@ class DefaultRulesScoringTest {
     private final ThreatScoreCalculator calculator = new RuleEngineThreatScoreCalculator(
             new InMemoryScoringRuleRepository());
 
-    private int score(String severity, String action, String path, long offenderEventCount) {
+    private Facts facts(String severity, String action, String path, long offenderEventCount) {
+        return facts(severity, action, path, offenderEventCount, null);
+    }
+
+    private Facts facts(String severity, String action, String path, long offenderEventCount, String country) {
+        Map<String, Object> rule = new HashMap<>();
+        rule.put("severity", severity);
         Map<String, Object> values = new HashMap<>();
-        values.put(FactKey.SEVERITY, severity);
-        values.put(FactKey.ACTION, action);
-        values.put(FactKey.PATH, path);
-        values.put(FactKey.OFFENDER_EVENT_COUNT, offenderEventCount);
-        Facts facts = values::get;
-        return calculator.calculate(facts).value();
+        values.put("rule", rule);
+        values.put("action", action);
+        values.put("path", path);
+        values.put("offenderEventCount", offenderEventCount);
+        if (country != null) {
+            Map<String, Object> geoLocation = new HashMap<>();
+            geoLocation.put("country", country);
+            values.put("geoLocation", geoLocation);
+        }
+        return new MapFacts(values);
+    }
+
+    private int score(String severity, String action, String path, long offenderEventCount) {
+        return calculator.calculate(facts(severity, action, path, offenderEventCount)).value();
     }
 
     @Test
@@ -73,15 +90,30 @@ class DefaultRulesScoringTest {
     void totalIsCappedAtOneHundred() {
         ScoringRuleRepository inflatedRepository = () -> List.of(
                 new Rule<>("big", ScoringRuleRepository.SCORING_TYPE, "Big", 10, true,
-                        new RuleCondition("severity", RuleOperator.EQUAL_TO, "CRITICAL"), 70),
+                        new RuleCondition(FactKey.SEVERITY, RuleOperator.EQUAL_TO, "CRITICAL"), 70),
                 new Rule<>("bigger", ScoringRuleRepository.SCORING_TYPE, "Bigger", 20, true,
-                        new RuleCondition("action", RuleOperator.EQUAL_TO, "DENY"), 50));
+                        new RuleCondition(FactKey.ACTION, RuleOperator.EQUAL_TO, "DENY"), 50));
         ThreatScoreCalculator overflowing = new RuleEngineThreatScoreCalculator(inflatedRepository);
 
-        Facts facts = Map.<String, Object>of(
-                FactKey.SEVERITY, "CRITICAL", FactKey.ACTION, "DENY")::get;
-        int total = overflowing.calculate(facts).value();
+        int total = overflowing.calculate(facts("CRITICAL", "DENY", "/x", 0)).value();
 
         assertThat(total).isEqualTo(100);
+    }
+
+    @Test
+    void nestedGeoCountryRuleContributesThroughDottedPath() {
+        ScoringRuleRepository withGeoRule = () -> {
+            List<Rule<Integer>> rules = new ArrayList<>(DefaultScoringRules.asList());
+            rules.add(new Rule<>("geo-cn", ScoringRuleRepository.SCORING_TYPE, "China origin", 50, true,
+                    new RuleCondition(FactKey.GEO_COUNTRY, RuleOperator.EQUAL_TO, "CN"), 5));
+            return rules;
+        };
+        ThreatScoreCalculator withGeo = new RuleEngineThreatScoreCalculator(withGeoRule);
+
+        int withoutCountry = withGeo.calculate(facts("LOW", "MONITOR", "/x", 0, null)).value();
+        int withChina = withGeo.calculate(facts("LOW", "MONITOR", "/x", 0, "CN")).value();
+
+        assertThat(withoutCountry).isEqualTo(10);
+        assertThat(withChina).isEqualTo(15);
     }
 }
