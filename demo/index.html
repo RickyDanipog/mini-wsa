@@ -1,0 +1,945 @@
+<title>Mini WSA — Reviewer Console</title>
+<style>
+  :root {
+    --bg: #f3f5f8; --panel: #ffffff; --panel-2: #f7f9fb; --border: #dde3ea;
+    --ink: #16202b; --ink-2: #465565; --muted: #7d8ea0;
+    --accent: #0e91a8; --accent-soft: rgba(14,145,168,0.14); --on-accent: #ffffff;
+    --crit: #d7373f; --warn: #b7791f; --ok: #2f855a;
+    --grid: rgba(20,32,43,0.08);
+    --shadow: 0 1px 2px rgba(16,32,43,.06), 0 6px 20px rgba(16,32,43,.05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0b0f14; --panel: #121a22; --panel-2: #0f161d; --border: #223040;
+      --ink: #e7eef5; --ink-2: #aebccb; --muted: #718395;
+      --accent: #3ad0e3; --accent-soft: rgba(58,208,227,0.14); --on-accent: #04222a;
+      --crit: #f0616d; --warn: #e3b341; --ok: #46c26a;
+      --grid: rgba(231,238,245,0.09);
+      --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 26px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="light"] {
+    --bg: #f3f5f8; --panel: #ffffff; --panel-2: #f7f9fb; --border: #dde3ea;
+    --ink: #16202b; --ink-2: #465565; --muted: #7d8ea0;
+    --accent: #0e91a8; --accent-soft: rgba(14,145,168,0.14); --on-accent: #ffffff;
+    --crit: #d7373f; --warn: #b7791f; --ok: #2f855a;
+    --grid: rgba(20,32,43,0.08);
+    --shadow: 0 1px 2px rgba(16,32,43,.06), 0 6px 20px rgba(16,32,43,.05);
+  }
+  :root[data-theme="dark"] {
+    --bg: #0b0f14; --panel: #121a22; --panel-2: #0f161d; --border: #223040;
+    --ink: #e7eef5; --ink-2: #aebccb; --muted: #718395;
+    --accent: #3ad0e3; --accent-soft: rgba(58,208,227,0.14); --on-accent: #04222a;
+    --crit: #f0616d; --warn: #e3b341; --ok: #46c26a;
+    --grid: rgba(231,238,245,0.09);
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 26px rgba(0,0,0,.35);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    line-height: 1.5; -webkit-font-smoothing: antialiased;
+  }
+  .mono { font-family: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace; font-variant-numeric: tabular-nums; }
+  .num, .val, .kpi .val, td.n, .row .num { font-variant-numeric: tabular-nums; }
+  .wrap { max-width: 1320px; margin: 0 auto; padding: 0 20px 64px; }
+
+  header.top {
+    position: sticky; top: 0; z-index: 20;
+    background: color-mix(in srgb, var(--bg) 88%, transparent);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--border);
+  }
+  .top-in { max-width: 1320px; margin: 0 auto; padding: 13px 20px; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  .brand { font-weight: 650; letter-spacing: .2px; font-size: 15px; }
+  .brand span { color: var(--muted); font-weight: 500; }
+  .health { margin-left: auto; display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+  .hitem { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--ink-2); }
+  .hdot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); box-shadow: 0 0 0 4px transparent; transition: background .2s, box-shadow .2s; }
+  .hdot.up { background: var(--ok); box-shadow: 0 0 0 4px color-mix(in srgb, var(--ok) 22%, transparent); }
+  .hdot.down { background: var(--crit); box-shadow: 0 0 0 4px color-mix(in srgb, var(--crit) 22%, transparent); }
+  .theme-btn { font: inherit; font-size: 12px; cursor: pointer; border: 1px solid var(--border); background: var(--panel-2); color: var(--ink-2); border-radius: 8px; padding: 5px 10px; }
+  .theme-btn:hover { border-color: var(--accent); color: var(--ink); }
+
+  h1.page { font-size: 21px; font-weight: 680; margin: 26px 0 4px; letter-spacing: .2px; }
+  p.sub { color: var(--ink-2); margin: 0 0 20px; font-size: 14px; max-width: 760px; }
+
+  .console { display: grid; grid-template-columns: 348px 1fr; gap: 18px; align-items: start; }
+
+  /* control rail */
+  .rail { display: flex; flex-direction: column; gap: 14px; }
+  .section { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 15px 16px 16px; box-shadow: var(--shadow); }
+  .tag { display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--accent); background: var(--accent-soft); border-radius: 5px; padding: 2px 7px; margin-bottom: 8px; }
+  .section h3 { font-size: 13.5px; font-weight: 650; margin: 0 0 3px; }
+  .section p.desc { font-size: 11.5px; color: var(--muted); margin: 0 0 12px; }
+  .field { margin-bottom: 10px; }
+  .field-row { display: flex; gap: 8px; }
+  .field-row .field { flex: 1; margin-bottom: 10px; }
+  label { display: block; font-size: 10.5px; font-weight: 650; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin-bottom: 4px; }
+  input, select { width: 100%; font: inherit; font-size: 12.5px; padding: 7px 9px; border-radius: 8px; border: 1px solid var(--border); background: var(--panel-2); color: var(--ink); }
+  input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; border-color: var(--accent); }
+  .btn-row { display: flex; gap: 8px; flex-wrap: wrap; }
+  button { font: inherit; cursor: pointer; border-radius: 9px; border: 1px solid var(--border); background: var(--panel-2); color: var(--ink); padding: 8px 12px; font-size: 12.5px; font-weight: 600; transition: border-color .15s, background .15s; }
+  button:hover { border-color: var(--accent); }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  button:disabled { opacity: .55; cursor: progress; }
+  button.primary { background: var(--accent); color: var(--on-accent); border-color: transparent; }
+  button.primary:hover { filter: brightness(1.06); }
+  button.danger { color: var(--crit); border-color: color-mix(in srgb, var(--crit) 35%, var(--border)); }
+  button.danger:hover { border-color: var(--crit); background: color-mix(in srgb, var(--crit) 10%, var(--panel-2)); }
+  .res { margin-top: 11px; font-size: 12px; color: var(--ink-2); min-height: 16px; }
+  .res b { color: var(--ink); }
+  .res.good b { color: var(--ok); } .res.bad b { color: var(--crit); }
+  .section code { font-family: ui-monospace, monospace; background: var(--panel-2); border: 1px solid var(--border); border-radius: 5px; padding: 1px 5px; font-size: 11.5px; color: var(--ink-2); }
+  .kv { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; font-size: 12px; color: var(--ink-2); margin-top: 8px; }
+
+  /* main */
+  .main { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+
+  .inspector { border-radius: 14px; border: 1px solid var(--border); background: var(--panel); box-shadow: var(--shadow); overflow: hidden; position: sticky; top: 62px; z-index: 5; }
+  .inspector .ins-head { display: flex; align-items: center; gap: 10px; padding: 11px 15px; border-bottom: 1px solid var(--border); }
+  .inspector .ins-head .lbl { font-size: 10.5px; text-transform: uppercase; letter-spacing: .08em; font-weight: 700; color: var(--muted); }
+  .inspector .ins-head .line { font-size: 12.5px; font-family: ui-monospace, monospace; color: var(--ink); word-break: break-all; }
+  .inspector .ins-head .stat { margin-left: auto; font-size: 12px; font-weight: 700; padding: 2px 9px; border-radius: 999px; white-space: nowrap; }
+  .inspector.ok .ins-head { background: color-mix(in srgb, var(--ok) 11%, var(--panel)); }
+  .inspector.ok .ins-head .stat { color: var(--ok); background: color-mix(in srgb, var(--ok) 16%, transparent); }
+  .inspector.err .ins-head { background: color-mix(in srgb, var(--crit) 11%, var(--panel)); }
+  .inspector.err .ins-head .stat { color: var(--crit); background: color-mix(in srgb, var(--crit) 16%, transparent); }
+  pre.ins-body { margin: 0; padding: 13px 15px; max-height: 300px; overflow: auto; font-size: 12px; font-family: ui-monospace, monospace; font-variant-numeric: tabular-nums; color: var(--ink-2); white-space: pre-wrap; word-break: break-word; }
+
+  .kpis { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; }
+  .kpi { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 14px 15px; box-shadow: var(--shadow); }
+  .kpi .label { font-size: 10px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 650; }
+  .kpi .val { font-size: 25px; font-weight: 660; margin-top: 5px; letter-spacing: -.5px; }
+  .kpi .foot { font-size: 11.5px; color: var(--ink-2); margin-top: 3px; }
+  .kpi .val small { font-size: 13px; color: var(--muted); font-weight: 500; }
+
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 17px 18px 16px; box-shadow: var(--shadow); min-width: 0; }
+  .card.wide { grid-column: 1 / -1; }
+  .card h2 { font-size: 13px; font-weight: 640; margin: 0 0 2px; letter-spacing: .1px; }
+  .card .hint { font-size: 11.5px; color: var(--muted); margin: 0 0 13px; }
+  .card .empty { font-size: 12.5px; color: var(--muted); padding: 22px 0; text-align: center; }
+
+  .legend { display: flex; gap: 15px; flex-wrap: wrap; font-size: 11.5px; color: var(--ink-2); margin-top: 12px; }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+
+  .rows { display: flex; flex-direction: column; gap: 9px; }
+  .row { display: grid; grid-template-columns: 132px 1fr 54px; align-items: center; gap: 10px; }
+  .row .name { font-size: 12.5px; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .track { height: 12px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+  .fill { height: 100%; border-radius: 6px 4px 4px 6px; background: var(--accent); }
+  .row .num { font-size: 12.5px; text-align: right; color: var(--ink); }
+  .row .num .avg { color: var(--muted); font-size: 11px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th { text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 650; padding: 0 10px 8px 0; border-bottom: 1px solid var(--border); }
+  td { padding: 8px 10px 8px 0; border-bottom: 1px solid var(--border); color: var(--ink-2); white-space: nowrap; }
+  tr:last-child td { border-bottom: 0; }
+  .tbl-scroll { overflow-x: auto; }
+
+  .chip { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; border: 1px solid transparent; }
+  .chip.crit { color: var(--crit); background: color-mix(in srgb, var(--crit) 14%, transparent); border-color: color-mix(in srgb, var(--crit) 30%, transparent); }
+  .chip.warn { color: var(--warn); background: color-mix(in srgb, var(--warn) 15%, transparent); border-color: color-mix(in srgb, var(--warn) 32%, transparent); }
+  .chip.ok   { color: var(--ok);   background: color-mix(in srgb, var(--ok) 15%, transparent);   border-color: color-mix(in srgb, var(--ok) 32%, transparent); }
+  .chip.mut  { color: var(--muted); background: color-mix(in srgb, var(--muted) 15%, transparent); border-color: color-mix(in srgb, var(--muted) 30%, transparent); }
+  .chip .cd { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .score { font-weight: 650; }
+
+  .alerts { display: flex; flex-direction: column; gap: 10px; }
+  .alert-row { display: flex; align-items: center; gap: 12px; border: 1px solid var(--border); border-radius: 10px; padding: 10px 13px; background: var(--panel-2); }
+  .alert-row.firing { border-color: color-mix(in srgb, var(--crit) 40%, var(--border)); background: color-mix(in srgb, var(--crit) 8%, var(--panel-2)); }
+  .alert-row .cat { font-weight: 650; font-size: 12.5px; color: var(--ink); }
+  .alert-row .meta { font-size: 11.5px; color: var(--ink-2); }
+  .alert-row .st { margin-left: auto; }
+
+  svg { display: block; width: 100%; height: auto; overflow: visible; }
+  .axis-lbl { fill: var(--muted); font-size: 10px; font-family: ui-monospace, monospace; }
+  .tip { position: fixed; pointer-events: none; background: var(--ink); color: var(--bg); font-size: 11.5px; padding: 6px 9px; border-radius: 7px; opacity: 0; transition: opacity .1s; z-index: 40; font-family: ui-monospace, monospace; white-space: nowrap; box-shadow: var(--shadow); }
+  code { font-family: ui-monospace, monospace; background: var(--panel-2); border: 1px solid var(--border); border-radius: 5px; padding: 1px 5px; font-size: 12px; color: var(--ink-2); }
+  .kbd { display: block; background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 9px 11px; font-family: ui-monospace, monospace; font-size: 12px; color: var(--ink); margin-top: 8px; white-space: pre-wrap; word-break: break-all; }
+  footer { margin-top: 26px; padding-top: 16px; border-top: 1px solid var(--border); font-size: 12px; color: var(--muted); }
+
+  @media (max-width: 960px) {
+    .console { grid-template-columns: 1fr; }
+    .rail { order: 2; }
+    .main { order: 1; }
+    .kpis { grid-template-columns: repeat(2, 1fr); }
+    .grid { grid-template-columns: 1fr; }
+    .inspector { position: static; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
+</style>
+
+<header class="top">
+  <div class="top-in">
+    <div class="brand">Mini&nbsp;WSA <span>· Reviewer Console</span></div>
+    <div class="health">
+      <div class="hitem"><span class="hdot" id="h-gateway"></span> gateway</div>
+      <div class="hitem"><span class="hdot" id="h-analytics"></span> analytics</div>
+      <button class="theme-btn" id="themeBtn" type="button" aria-label="Toggle color theme">◐ theme</button>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+  <h1 class="page">Reviewer Console — drive every use case live</h1>
+  <p class="sub">Each control on the left triggers a real request against the running services through the same-origin nginx proxy. Responses land in the inspector; the dashboard refreshes from the analytics service's own <code>/v1/stats</code> endpoints.</p>
+
+  <div class="console">
+    <!-- ============ CONTROL RAIL ============ -->
+    <aside class="rail">
+
+      <section class="section">
+        <span class="tag">FR1 · Ingestion</span>
+        <h3>Ingest events</h3>
+        <p class="desc"><code>POST /api/gateway/v1/events/ingest</code> — a valid single event, a batch of 10, or a deliberately invalid event to prove validation.</p>
+        <div class="btn-row">
+          <button class="primary" id="btnIngest1" type="button">Ingest 1 event</button>
+          <button id="btnIngest10" type="button">Ingest batch (10)</button>
+          <button class="danger" id="btnInvalid" type="button">Send an INVALID event</button>
+        </div>
+        <div class="res" id="resIngest"></div>
+      </section>
+
+      <section class="section">
+        <span class="tag">FR5 + FR2 · Attack wave &amp; scoring</span>
+        <h3>Simulate an attack wave</h3>
+        <p class="desc">Generates events in the browser and POSTs them in batches. Repeated <code>(IP, path)</code> bursts hit <code>/admin</code>/<code>/login</code> to trip sensitive-path and repeat-offender scoring, mixed with varied categories, severities and actions.</p>
+        <div class="field">
+          <label for="waveCount">Events to generate</label>
+          <input type="number" id="waveCount" value="30" min="1" max="500" step="1">
+        </div>
+        <div class="btn-row">
+          <button class="primary" id="btnWave" type="button">Run attack wave</button>
+        </div>
+        <div class="res" id="resWave"></div>
+      </section>
+
+      <section class="section">
+        <span class="tag">FR3 · Statistics</span>
+        <h3>Refresh statistics</h3>
+        <p class="desc"><code>GET /api/analytics/v1/stats/summary</code> — updates the KPI tiles, category / action bars, top attackers and top paths.</p>
+        <div class="btn-row">
+          <button class="primary" id="btnStats" type="button">Refresh stats</button>
+          <button id="btnRefreshAll" type="button">Refresh all</button>
+        </div>
+        <div class="res" id="resStats"></div>
+      </section>
+
+      <section class="section">
+        <span class="tag">FR4 · Samples</span>
+        <h3>Fetch event samples</h3>
+        <p class="desc"><code>GET /api/analytics/v1/events/samples</code> — filtered, newest first.</p>
+        <div class="field-row">
+          <div class="field">
+            <label for="fCategory">Category</label>
+            <select id="fCategory"></select>
+          </div>
+          <div class="field">
+            <label for="fAction">Action</label>
+            <select id="fAction"></select>
+          </div>
+        </div>
+        <div class="field">
+          <label for="fLimit">Limit</label>
+          <input type="number" id="fLimit" value="20" min="1" max="500" step="1">
+        </div>
+        <div class="btn-row">
+          <button class="primary" id="btnSamples" type="button">Fetch samples</button>
+        </div>
+        <div class="res" id="resSamples"></div>
+      </section>
+
+      <section class="section">
+        <span class="tag">B3 · Time-series</span>
+        <h3>Event volume over time</h3>
+        <p class="desc"><code>GET /api/analytics/v1/stats/timeseries?interval=</code> — pick a bucket size.</p>
+        <div class="btn-row">
+          <button id="btnTs1m" type="button" data-int="1m">1m</button>
+          <button id="btnTs5m" type="button" data-int="5m">5m</button>
+          <button class="primary" id="btnTs1h" type="button" data-int="1h">1h</button>
+        </div>
+        <div class="res" id="resTs"></div>
+      </section>
+
+      <section class="section">
+        <span class="tag">B1 · Alerting</span>
+        <h3>Threshold alert rules</h3>
+        <p class="desc">Define a rule (<code>POST /alerts/define</code>) then evaluate all rules (<code>GET /alerts/evaluate</code>).</p>
+        <div class="field">
+          <label for="aCategory">Category</label>
+          <select id="aCategory"></select>
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label for="aThreshold">Threshold</label>
+            <input type="number" id="aThreshold" value="3" min="1" step="1">
+          </div>
+          <div class="field">
+            <label for="aWindow">Window (min)</label>
+            <input type="number" id="aWindow" value="60" min="1" step="1">
+          </div>
+        </div>
+        <div class="btn-row">
+          <button class="primary" id="btnDefine" type="button">Define rule</button>
+          <button id="btnEvaluate" type="button">Evaluate</button>
+        </div>
+        <div class="res" id="resAlert"></div>
+      </section>
+
+      <section class="section">
+        <span class="tag">B4 · Rate limiting</span>
+        <h3>Per-IP rate limit</h3>
+        <p class="desc">Fires 120 rapid <code>GET /stats/summary</code> requests and tallies 200 vs 429 (default limit ~100/min per client IP).</p>
+        <div class="btn-row">
+          <button class="primary" id="btnRate" type="button">Send 120 rapid requests</button>
+        </div>
+        <div class="res" id="resRate"></div>
+        <p class="desc" style="margin-top:10px">Note: through the proxy the console shares one client identity, so any other calls you make also count toward the same limit.</p>
+      </section>
+
+      <section class="section">
+        <span class="tag">B2 · Streaming ingestion</span>
+        <h3>Kafka consumer path</h3>
+        <p class="desc">The gateway also consumes the Kafka <code>events.ingest</code> topic, so producers can stream events without HTTP. Browsers can't produce to Kafka — run this on the host to exercise that path:</p>
+        <code class="kbd">./scripts/produce-to-kafka.sh 50</code>
+      </section>
+
+    </aside>
+
+    <!-- ============ DASHBOARD + INSPECTOR ============ -->
+    <main class="main">
+
+      <div class="inspector" id="inspector">
+        <div class="ins-head">
+          <span class="lbl">Response</span>
+          <span class="line" id="insLine">no request yet — trigger an action on the left</span>
+          <span class="stat" id="insStat" style="display:none"></span>
+        </div>
+        <pre class="ins-body" id="insBody">Waiting for the first request…</pre>
+      </div>
+
+      <div class="kpis" id="kpis">
+        <div class="kpi"><div class="label">Total events</div><div class="val mono" id="kTotal">—</div><div class="foot" id="kTotalFoot">from /stats/summary</div></div>
+        <div class="kpi"><div class="label">Avg threat score</div><div class="val mono" id="kAvg">—</div><div class="foot">weighted over categories</div></div>
+        <div class="kpi"><div class="label">Denied</div><div class="val mono" id="kDeny">—</div><div class="foot" id="kDenyFoot">DENY actions</div></div>
+        <div class="kpi"><div class="label">Categories</div><div class="val mono" id="kCats">—</div><div class="foot">distinct attack types</div></div>
+        <div class="kpi"><div class="label">Alerts firing</div><div class="val mono" id="kFiring">—</div><div class="foot" id="kFiringFoot">run Evaluate (B1)</div></div>
+      </div>
+
+      <div class="card wide">
+        <h2>Event volume over time <span class="mono" id="tsInterval" style="color:var(--muted);font-weight:500;font-size:11px"></span></h2>
+        <p class="hint">B3 · <code>GET /v1/stats/timeseries</code> — x = bucket start, y = event count.</p>
+        <div id="ts"><div class="empty">No time-series yet — pick an interval (B3) or run an attack wave.</div></div>
+      </div>
+
+      <div class="grid">
+        <div class="card">
+          <h2>Attacks by category</h2>
+          <p class="hint">count · average threat score</p>
+          <div class="rows" id="cat"></div>
+          <div class="empty" id="catEmpty">No data yet — run an attack wave, then Refresh stats.</div>
+        </div>
+
+        <div class="card">
+          <h2>Action taken</h2>
+          <p class="hint">the edge decision carried on each event</p>
+          <div class="rows" id="act"></div>
+          <div class="empty" id="actEmpty">No data yet.</div>
+          <div class="legend">
+            <span><i style="background:var(--crit)"></i>DENY — blocked</span>
+            <span><i style="background:var(--warn)"></i>ALERT — flagged</span>
+            <span><i style="background:var(--ok)"></i>MONITOR — logged</span>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>Top attackers</h2>
+          <p class="hint">by event count · avg score as severity chip</p>
+          <div class="rows" id="atk"></div>
+          <div class="empty" id="atkEmpty">No data yet.</div>
+        </div>
+
+        <div class="card">
+          <h2>Most-targeted paths</h2>
+          <p class="hint"><code>/admin</code> &amp; <code>/login</code> drive the sensitive-path bonus</p>
+          <div class="rows" id="paths"></div>
+          <div class="empty" id="pathsEmpty">No data yet.</div>
+        </div>
+
+        <div class="card wide">
+          <h2>Alert evaluations</h2>
+          <p class="hint">B1 · <code>GET /v1/alerts/evaluate</code> — a rule fires when its window count reaches the threshold</p>
+          <div class="alerts" id="alerts"></div>
+          <div class="empty" id="alertsEmpty">No rules evaluated yet — define a rule and hit Evaluate (B1).</div>
+        </div>
+
+        <div class="card wide">
+          <h2>Event samples <span class="mono" id="samplesTotal" style="color:var(--muted);font-weight:500;font-size:11px"></span></h2>
+          <p class="hint">FR4 · <code>GET /v1/events/samples</code> — newest first</p>
+          <div class="tbl-scroll">
+            <table id="samples">
+              <thead><tr>
+                <th>Event ID</th><th>IP</th><th>Path</th><th>Category</th><th>Sev</th><th>Action</th><th style="text-align:right">Score</th>
+              </tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <div class="empty" id="samplesEmpty">No samples yet — Fetch samples (FR4) or run an attack wave.</div>
+        </div>
+      </div>
+
+      <footer>
+        Live console for the Mini WSA pipeline — <span class="mono">gateway → Kafka → enrichment (rule engine) → event-store → analytics</span>.
+        All requests go same-origin through nginx to <code>/api/gateway/…</code> and <code>/api/analytics/…</code>. If a call fails, start the stack with <code>docker compose up</code>.
+      </footer>
+    </main>
+  </div>
+</div>
+
+<div class="tip" id="tip"></div>
+
+<script>
+  "use strict";
+
+  // ---------- endpoints (relative, same-origin) ----------
+  const API = {
+    gwIngest: "/api/gateway/v1/events/ingest",
+    gwHealth: "/api/gateway/actuator/health",
+    anHealth: "/api/analytics/actuator/health",
+    summary: "/api/analytics/v1/stats/summary",
+    timeseries: i => "/api/analytics/v1/stats/timeseries?interval=" + encodeURIComponent(i),
+    samples: q => "/api/analytics/v1/events/samples" + q,
+    alertsDefine: "/api/analytics/v1/alerts/define",
+    alertsEvaluate: "/api/analytics/v1/alerts/evaluate"
+  };
+
+  const CATEGORIES = ["INJECTION", "XSS", "PROTOCOL_VIOLATION", "DATA_LEAKAGE", "BOT", "DOS", "RATE_LIMIT"];
+  const SEVERITIES = ["CRITICAL", "HIGH", "MEDIUM", "LOW"];
+  const ACTIONS = ["DENY", "ALERT", "MONITOR"];
+  const PATHS = ["/admin", "/login", "/api/v1/login", "/checkout", "/api/v1/search", "/static/app.js"];
+  const SENSITIVE = ["/admin", "/login"];
+  const METHODS = ["GET", "POST", "PUT"];
+  const UAS = [
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15",
+    "curl/8.4.0", "sqlmap/1.7.11#stable", "python-requests/2.31.0", "Googlebot/2.1 (+http://www.google.com/bot.html)"
+  ];
+  const GEO = [["US", "Ashburn"], ["CN", "Beijing"], ["RU", "Moscow"], ["DE", "Frankfurt"], ["BR", "Sao Paulo"], ["IN", "Mumbai"]];
+  const CAT_NAME = {
+    INJECTION: "SQL/Command Injection", XSS: "Cross-Site Scripting",
+    PROTOCOL_VIOLATION: "Protocol Violation", DATA_LEAKAGE: "Data Leakage",
+    BOT: "Bot Activity", DOS: "Denial of Service", RATE_LIMIT: "Rate Limiting"
+  };
+
+  // ---------- helpers ----------
+  const $ = s => document.querySelector(s);
+  const pick = a => a[Math.floor(Math.random() * a.length)];
+  const randInt = (lo, hi) => lo + Math.floor(Math.random() * (hi - lo + 1));
+  const randIp = () => `${randInt(1, 223)}.${randInt(0, 255)}.${randInt(0, 255)}.${randInt(1, 254)}`;
+  let counter = 0;
+  const uid = () => `demo-${Date.now()}-${counter++}`;
+
+  // ---------- event generator (valid IngestEventRequest) ----------
+  function makeEvent(over) {
+    over = over || {};
+    const category = over.category || pick(CATEGORIES);
+    const severity = over.severity || pick(SEVERITIES);
+    const action = over.action || pick(ACTIONS);
+    const path = over.path || pick(PATHS);
+    const clientIp = over.clientIp || randIp();
+    const ageMs = over.ageMs != null ? over.ageMs : randInt(0, 30 * 60 * 1000);
+    const timestamp = new Date(Date.now() - ageMs).toISOString();
+    const statusCode = action === "DENY" ? 403 : (Math.random() < 0.5 ? 200 : 401);
+    const geo = pick(GEO);
+    return {
+      eventId: uid(),
+      timestamp,
+      configId: 1,
+      policyId: "policy-" + randInt(1, 3),
+      clientIp,
+      hostname: "app.miniwsa.dev",
+      path,
+      method: pick(METHODS),
+      statusCode,
+      userAgent: pick(UAS),
+      rule: {
+        id: "rule-" + category.toLowerCase(),
+        name: CAT_NAME[category],
+        message: category + " signature matched on " + path,
+        severity,
+        category
+      },
+      action,
+      geoLocation: { country: geo[0], city: geo[1] },
+      requestSize: randInt(180, 4200),
+      responseSize: randInt(180, 22000)
+    };
+  }
+
+  // repeated (IP,path) bursts on sensitive paths + varied filler
+  function generateWave(n) {
+    const events = [];
+    const attackers = [randIp(), randIp(), randIp()];
+    const burst = Math.floor(n * 0.6);
+    for (let i = 0; i < burst; i++) {
+      const category = Math.random() < 0.6 ? "INJECTION" : pick(CATEGORIES);
+      events.push(makeEvent({
+        clientIp: attackers[i % attackers.length],
+        path: SENSITIVE[i % SENSITIVE.length],
+        category,
+        severity: pick(["CRITICAL", "HIGH"]),
+        action: Math.random() < 0.7 ? "DENY" : "ALERT",
+        ageMs: randInt(0, 10 * 60 * 1000)
+      }));
+    }
+    for (let i = burst; i < n; i++) events.push(makeEvent());
+    return events;
+  }
+
+  // ---------- fetch wrapper ----------
+  async function api(method, path, body) {
+    const opts = { method, headers: {} };
+    if (body !== undefined) {
+      opts.headers["Content-Type"] = "application/json";
+      opts.body = JSON.stringify(body);
+    }
+    try {
+      const res = await fetch(path, opts);
+      const text = await res.text();
+      let parsed = null;
+      if (text) { try { parsed = JSON.parse(text); } catch (e) { parsed = text; } }
+      return { ok: res.ok, status: res.status, body: parsed, method, path, unreachable: false };
+    } catch (e) {
+      return {
+        ok: false, status: 0, method, path, unreachable: true,
+        body: { message: "service unreachable — is the stack up? run `docker compose up`", detail: String(e) }
+      };
+    }
+  }
+
+  // ---------- response inspector ----------
+  function inspect(res) {
+    const el = $("#inspector");
+    el.className = "inspector " + (res.ok ? "ok" : "err");
+    $("#insLine").textContent = `${res.method} ${res.path}`;
+    const stat = $("#insStat");
+    stat.style.display = "";
+    stat.textContent = res.unreachable ? "UNREACHABLE" : String(res.status);
+    const body = res.body;
+    $("#insBody").textContent = (body == null)
+      ? "(empty body)"
+      : (typeof body === "string" ? body : JSON.stringify(body, null, 2));
+  }
+
+  function setRes(id, html, kind) {
+    const el = $(id);
+    el.className = "res" + (kind ? " " + kind : "");
+    el.innerHTML = html;
+  }
+
+  // ---------- SVG chart primitives ----------
+  const NS = "http://www.w3.org/2000/svg";
+  const css = k => getComputedStyle(document.documentElement).getPropertyValue(k).trim();
+  const svgEl = (t, a) => { const e = document.createElementNS(NS, t); for (const k in a) e.setAttribute(k, a[k]); return e; };
+  const tip = $("#tip");
+  const showTip = (evt, html) => { tip.innerHTML = html; tip.style.opacity = 1; tip.style.left = (evt.clientX + 12) + "px"; tip.style.top = (evt.clientY - 8) + "px"; };
+  const hideTip = () => { tip.style.opacity = 0; };
+  const scoreColor = s => s >= 66 ? css("--crit") : s >= 40 ? css("--warn") : css("--ok");
+  const actClass = a => a === "DENY" ? "crit" : a === "ALERT" ? "warn" : "ok";
+  const fmtTime = iso => { const d = new Date(iso); return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }); };
+
+  // ---------- state ----------
+  const state = { summary: null, ts: null, tsInterval: "1h" };
+
+  // ---------- time-series area chart ----------
+  function renderTimeseries() {
+    const box = $("#ts");
+    box.innerHTML = "";
+    const data = state.ts;
+    $("#tsInterval").textContent = data ? "· " + (data.interval || state.tsInterval) : "";
+    if (!data || !data.buckets || data.buckets.length === 0) {
+      box.innerHTML = '<div class="empty">No buckets returned for this interval yet.</div>';
+      return;
+    }
+    const d = data.buckets;
+    const W = box.clientWidth || 1080, H = 250, P = { l: 38, r: 14, t: 14, b: 28 };
+    const max = Math.max(1, ...d.map(b => b.count));
+    const iw = W - P.l - P.r, ih = H - P.t - P.b;
+    const x = i => P.l + (d.length === 1 ? iw / 2 : iw * i / (d.length - 1));
+    const y = v => P.t + ih - ih * v / max;
+    const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "Event volume over time" });
+    const ticks = 4;
+    for (let t = 0; t <= ticks; t++) {
+      const v = Math.round(max * t / ticks);
+      svg.appendChild(svgEl("line", { x1: P.l, y1: y(v), x2: W - P.r, y2: y(v), stroke: css("--grid"), "stroke-width": 1 }));
+      const lab = svgEl("text", { x: P.l - 8, y: y(v) + 3, "text-anchor": "end", class: "axis-lbl" }); lab.textContent = v; svg.appendChild(lab);
+    }
+    const line = d.map((p, i) => `${i ? "L" : "M"}${x(i)},${y(p.count)}`).join(" ");
+    const fillPath = `${line} L${x(d.length - 1)},${y(0)} L${x(0)},${y(0)} Z`;
+    const grad = svgEl("linearGradient", { id: "ag", x1: 0, y1: 0, x2: 0, y2: 1 });
+    grad.appendChild(svgEl("stop", { offset: "0%", "stop-color": css("--accent"), "stop-opacity": .28 }));
+    grad.appendChild(svgEl("stop", { offset: "100%", "stop-color": css("--accent"), "stop-opacity": .02 }));
+    const defs = svgEl("defs", {}); defs.appendChild(grad); svg.appendChild(defs);
+    svg.appendChild(svgEl("path", { d: fillPath, fill: "url(#ag)" }));
+    svg.appendChild(svgEl("path", { d: line, fill: "none", stroke: css("--accent"), "stroke-width": 2.5, "stroke-linejoin": "round", "stroke-linecap": "round" }));
+    const step = Math.ceil(d.length / 8);
+    d.forEach((p, i) => {
+      const last = i === d.length - 1;
+      if (d.length <= 40 || last) {
+        svg.appendChild(svgEl("circle", { cx: x(i), cy: y(p.count), r: last ? 5 : 3, fill: last ? css("--accent") : css("--panel"), stroke: css("--accent"), "stroke-width": 2 }));
+      }
+      if (i % step === 0 || last) {
+        const tx = svgEl("text", { x: x(i), y: H - 9, "text-anchor": "middle", class: "axis-lbl" });
+        tx.textContent = fmtTime(p.bucketStart); svg.appendChild(tx);
+      }
+      const hw = iw / d.length;
+      const hit = svgEl("rect", { x: x(i) - hw / 2, y: P.t, width: hw, height: ih, fill: "transparent" });
+      hit.addEventListener("mousemove", e => showTip(e, `<b>${p.count}</b> events &middot; ${fmtTime(p.bucketStart)}`));
+      hit.addEventListener("mouseleave", hideTip);
+      svg.appendChild(hit);
+    });
+    box.appendChild(svg);
+  }
+
+  // ---------- horizontal bars ----------
+  function bars(id, emptyId, items, getName, getVal, getNum, opts) {
+    opts = opts || {};
+    const host = $(id); host.innerHTML = "";
+    const empty = $(emptyId);
+    if (!items || items.length === 0) { empty.style.display = "block"; return; }
+    empty.style.display = "none";
+    const max = Math.max(1, ...items.map(getVal));
+    items.forEach(it => {
+      const row = document.createElement("div"); row.className = "row";
+      const name = document.createElement("div"); name.className = "name"; name.textContent = getName(it); name.title = getName(it);
+      const track = document.createElement("div"); track.className = "track";
+      const fill = document.createElement("div"); fill.className = "fill";
+      fill.style.width = Math.max(2, 100 * getVal(it) / max) + "%";
+      if (opts.color) fill.style.background = opts.color(it);
+      track.appendChild(fill);
+      const num = document.createElement("div"); num.className = "num mono"; num.innerHTML = getNum(it);
+      row.append(name, track, num);
+      if (opts.chip) { const c = opts.chip(it); if (c) name.appendChild(c); }
+      row.addEventListener("mousemove", e => opts.tipHtml && showTip(e, opts.tipHtml(it)));
+      row.addEventListener("mouseleave", hideTip);
+      host.appendChild(row);
+    });
+  }
+
+  // ---------- render summary ----------
+  function renderSummary() {
+    const s = state.summary;
+    if (!s) return;
+    const cats = Object.entries(s.byCategory || {}).map(([n, v]) => ({ n, c: v.count, a: v.avgThreatScore }));
+    let totCount = 0, totScore = 0;
+    cats.forEach(c => { totCount += c.c; totScore += c.c * c.a; });
+    const avg = totCount ? (totScore / totCount) : 0;
+    const deny = (s.byAction && s.byAction.DENY) || 0;
+    const total = s.totalEvents || 0;
+
+    $("#kTotal").textContent = total.toLocaleString();
+    $("#kTotalFoot").textContent = cats.length + " attack categories";
+    $("#kAvg").innerHTML = avg.toFixed(1) + '<small> /100</small>';
+    $("#kDeny").textContent = deny.toLocaleString();
+    const denyPct = total ? Math.round(100 * deny / total) : 0;
+    $("#kDenyFoot").textContent = denyPct + "% of events blocked";
+    $("#kCats").textContent = cats.length;
+
+    cats.sort((a, b) => b.c - a.c);
+    bars("#cat", "#catEmpty", cats, d => d.n, d => d.c,
+      d => `${d.c}<span class="avg"> · ${d.a.toFixed(0)}</span>`,
+      { tipHtml: d => `<b>${d.n}</b><br>${d.c} events &middot; avg score ${d.a}` });
+
+    const actMap = s.byAction || {};
+    const acts = ACTIONS.filter(a => a in actMap).map(a => ({ n: a, c: actMap[a], cls: actClass(a) }));
+    bars("#act", "#actEmpty", acts, d => d.n, d => d.c, d => `${d.c}`,
+      { color: d => css("--" + d.cls), tipHtml: d => `<b>${d.n}</b> &middot; ${d.c} events` });
+
+    const atk = (s.topAttackers || []).map(a => ({ ip: a.clientIp, c: a.count, a: a.avgThreatScore }));
+    bars("#atk", "#atkEmpty", atk, d => d.ip, d => d.c, d => `${d.c}`,
+      {
+        tipHtml: d => `<b>${d.ip}</b><br>${d.c} events &middot; avg score ${d.a}`,
+        chip: d => {
+          const cls = d.a >= 66 ? "crit" : d.a >= 40 ? "warn" : "ok";
+          const chip = document.createElement("span");
+          chip.className = "chip " + cls; chip.style.marginLeft = "7px";
+          chip.innerHTML = `<span class="cd"></span>${d.a.toFixed(0)}`;
+          return chip;
+        }
+      });
+
+    const paths = (s.topTargetedPaths || []).map(p => ({ p: p.path, c: p.count }));
+    bars("#paths", "#pathsEmpty", paths, d => d.p, d => d.c, d => `${d.c}`,
+      { tipHtml: d => `<b>${d.p}</b> &middot; ${d.c} hits` });
+  }
+
+  // ---------- render samples ----------
+  function renderSamples(data) {
+    const tb = $("#samples tbody");
+    tb.innerHTML = "";
+    const rows = (data && data.results) || [];
+    $("#samplesTotal").textContent = data ? `· ${data.total} total` : "";
+    $("#samplesEmpty").style.display = rows.length ? "none" : "block";
+    rows.forEach(s => {
+      const sev = s.rule ? s.rule.severity : "";
+      const catg = s.rule ? s.rule.category : "";
+      const tr = document.createElement("tr");
+      tr.innerHTML =
+        `<td class="mono">${s.eventId}</td>` +
+        `<td class="mono">${s.clientIp}</td>` +
+        `<td class="mono">${s.path}</td>` +
+        `<td>${catg}</td>` +
+        `<td>${sev}</td>` +
+        `<td><span class="chip ${actClass(s.action)}"><span class="cd"></span>${s.action}</span></td>` +
+        `<td class="mono score" style="text-align:right;color:${scoreColor(s.threatScore)}">${s.threatScore}</td>`;
+      tb.appendChild(tr);
+    });
+  }
+
+  // ---------- render alerts ----------
+  function renderAlerts(data) {
+    const host = $("#alerts"); host.innerHTML = "";
+    const alerts = (data && data.alerts) || [];
+    $("#alertsEmpty").style.display = alerts.length ? "none" : "block";
+    let firing = 0;
+    alerts.forEach(a => {
+      if (a.firing) firing++;
+      const row = document.createElement("div");
+      row.className = "alert-row" + (a.firing ? " firing" : "");
+      row.innerHTML =
+        `<span class="cat">${a.category}</span>` +
+        `<span class="meta">${a.count} / ${a.threshold} in ${a.windowMinutes}m window</span>` +
+        `<span class="st">${a.firing
+          ? '<span class="chip crit"><span class="cd"></span>FIRING</span>'
+          : '<span class="chip mut"><span class="cd"></span>not firing</span>'}</span>`;
+      host.appendChild(row);
+    });
+    $("#kFiring").textContent = firing;
+    $("#kFiring").style.color = firing ? css("--crit") : "";
+    $("#kFiringFoot").textContent = alerts.length + " rule(s) evaluated";
+  }
+
+  // ---------- actions ----------
+  async function busy(btn, fn) {
+    btn.disabled = true;
+    try { return await fn(); } finally { btn.disabled = false; }
+  }
+
+  async function doIngest(events, resId, label) {
+    const res = await api("POST", API.gwIngest, events.length === 1 ? events[0] : events);
+    inspect(res);
+    if (res.ok) {
+      const n = res.body && res.body.acceptedCount;
+      setRes(resId, `${label}: <b>${res.status}</b> · accepted <b>${n}</b>`, "good");
+    } else if (res.unreachable) {
+      setRes(resId, `<b>unreachable</b> — is the stack up?`, "bad");
+    } else {
+      const code = res.body && res.body.error && res.body.error.code;
+      setRes(resId, `${label}: <b>${res.status}</b>${code ? " · " + code : ""}`, "bad");
+    }
+    if (res.ok) await refreshDashboard();
+    return res;
+  }
+
+  async function refreshSummary(quiet) {
+    const res = await api("GET", API.summary);
+    if (!quiet) inspect(res);
+    if (res.ok) { state.summary = res.body; renderSummary(); }
+    return res;
+  }
+
+  async function refreshTimeseries(interval, quiet) {
+    state.tsInterval = interval;
+    const res = await api("GET", API.timeseries(interval));
+    if (!quiet) inspect(res);
+    if (res.ok) { state.ts = res.body; renderTimeseries(); }
+    return res;
+  }
+
+  function sampleQuery() {
+    const params = new URLSearchParams();
+    const c = $("#fCategory").value, a = $("#fAction").value, l = $("#fLimit").value;
+    if (c) params.set("category", c);
+    if (a) params.set("action", a);
+    if (l) params.set("limit", l);
+    const q = params.toString();
+    return q ? "?" + q : "";
+  }
+
+  async function refreshSamples(quiet) {
+    const res = await api("GET", API.samples(sampleQuery()));
+    if (!quiet) inspect(res);
+    if (res.ok) renderSamples(res.body);
+    return res;
+  }
+
+  async function evaluateAlerts(quiet) {
+    const res = await api("GET", API.alertsEvaluate);
+    if (!quiet) inspect(res);
+    if (res.ok) renderAlerts(res.body);
+    return res;
+  }
+
+  // auto-refresh after ingestion (no inspector takeover)
+  async function refreshDashboard() {
+    await Promise.all([
+      refreshSummary(true),
+      refreshTimeseries(state.tsInterval, true),
+      refreshSamples(true),
+      evaluateAlerts(true)
+    ]);
+  }
+
+  // ---------- health polling ----------
+  function setDot(id, up) {
+    const el = $("#h-" + id);
+    el.className = "hdot " + (up ? "up" : "down");
+  }
+  async function pollHealth() {
+    const checks = [["gateway", API.gwHealth], ["analytics", API.anHealth]];
+    await Promise.all(checks.map(async ([id, path]) => {
+      try {
+        const r = await fetch(path);
+        let up = r.ok;
+        try { const j = await r.json(); if (j && j.status) up = j.status === "UP"; } catch (e) {}
+        setDot(id, up);
+      } catch (e) { setDot(id, false); }
+    }));
+  }
+
+  // ---------- populate selects ----------
+  function fillSelect(sel, values, blankLabel) {
+    const opt0 = document.createElement("option");
+    opt0.value = ""; opt0.textContent = blankLabel; sel.appendChild(opt0);
+    values.forEach(v => { const o = document.createElement("option"); o.value = v; o.textContent = v; sel.appendChild(o); });
+  }
+  fillSelect($("#fCategory"), CATEGORIES, "(any category)");
+  fillSelect($("#fAction"), ACTIONS, "(any action)");
+  CATEGORIES.forEach(v => { const o = document.createElement("option"); o.value = v; o.textContent = v; $("#aCategory").appendChild(o); });
+  $("#aCategory").value = "INJECTION";
+
+  // ---------- wire controls ----------
+  $("#btnIngest1").addEventListener("click", e => busy(e.target, () => doIngest([makeEvent()], "#resIngest", "1 event")));
+  $("#btnIngest10").addEventListener("click", e => busy(e.target, () => doIngest(Array.from({ length: 10 }, () => makeEvent()), "#resIngest", "batch of 10")));
+  $("#btnInvalid").addEventListener("click", e => busy(e.target, async () => {
+    const bad = makeEvent();
+    bad.clientIp = "";                 // @NotBlank violation
+    bad.rule.category = "NOT_A_CATEGORY"; // bad enum
+    const res = await api("POST", API.gwIngest, bad);
+    inspect(res);
+    if (res.status === 400) {
+      const code = res.body && res.body.error && res.body.error.code;
+      setRes("#resIngest", `invalid event rejected: <b>400</b> · ${code || "error"} — see inspector`, "bad");
+    } else if (res.unreachable) {
+      setRes("#resIngest", `<b>unreachable</b> — is the stack up?`, "bad");
+    } else {
+      setRes("#resIngest", `unexpected <b>${res.status}</b> (expected 400)`, "bad");
+    }
+  }));
+
+  $("#btnWave").addEventListener("click", e => busy(e.target, async () => {
+    const n = Math.max(1, Math.min(500, parseInt($("#waveCount").value, 10) || 30));
+    const events = generateWave(n);
+    setRes("#resWave", `generating & sending <b>${n}</b> events…`);
+    let accepted = 0, last = null;
+    const size = 25;
+    for (let i = 0; i < events.length; i += size) {
+      last = await api("POST", API.gwIngest, events.slice(i, i + size));
+      if (last.ok && last.body) accepted += (last.body.acceptedCount || 0);
+      else break;
+    }
+    inspect(last);
+    if (last && last.ok) {
+      setRes("#resWave", `wave sent · <b>${accepted}</b> / ${n} accepted — dashboard refreshed`, "good");
+      await refreshDashboard();
+    } else if (last && last.unreachable) {
+      setRes("#resWave", `<b>unreachable</b> — is the stack up?`, "bad");
+    } else {
+      setRes("#resWave", `wave failed at <b>${last ? last.status : "?"}</b> (${accepted} accepted before error)`, "bad");
+    }
+  }));
+
+  $("#btnStats").addEventListener("click", e => busy(e.target, async () => {
+    const res = await refreshSummary(false);
+    if (res.ok) setRes("#resStats", `summary loaded · <b>${res.body.totalEvents}</b> events`, "good");
+    else setRes("#resStats", res.unreachable ? "<b>unreachable</b>" : `<b>${res.status}</b>`, "bad");
+  }));
+  $("#btnRefreshAll").addEventListener("click", e => busy(e.target, async () => {
+    setRes("#resStats", "refreshing everything…");
+    await Promise.all([refreshSummary(true), refreshTimeseries(state.tsInterval, true), refreshSamples(true), evaluateAlerts(true)]);
+    inspect({ ok: true, status: 200, method: "GET", path: "(refresh all → summary, timeseries, samples, alerts)", body: { refreshed: ["summary", "timeseries", "samples", "alerts"] } });
+    setRes("#resStats", "all panels refreshed", "good");
+  }));
+
+  $("#btnSamples").addEventListener("click", e => busy(e.target, async () => {
+    const res = await refreshSamples(false);
+    if (res.ok) setRes("#resSamples", `showing <b>${(res.body.results || []).length}</b> of <b>${res.body.total}</b>`, "good");
+    else setRes("#resSamples", res.unreachable ? "<b>unreachable</b>" : `<b>${res.status}</b>`, "bad");
+  }));
+
+  document.querySelectorAll("[data-int]").forEach(btn => {
+    btn.addEventListener("click", e => busy(e.target, async () => {
+      document.querySelectorAll("[data-int]").forEach(b => b.classList.remove("primary"));
+      btn.classList.add("primary");
+      const res = await refreshTimeseries(btn.dataset.int, false);
+      if (res.ok) setRes("#resTs", `interval <b>${btn.dataset.int}</b> · ${(res.body.buckets || []).length} buckets`, "good");
+      else setRes("#resTs", res.unreachable ? "<b>unreachable</b>" : `<b>${res.status}</b>`, "bad");
+    }));
+  });
+
+  $("#btnDefine").addEventListener("click", e => busy(e.target, async () => {
+    const body = {
+      category: $("#aCategory").value,
+      threshold: parseInt($("#aThreshold").value, 10) || 1,
+      windowMinutes: parseInt($("#aWindow").value, 10) || 1
+    };
+    const res = await api("POST", API.alertsDefine, body);
+    inspect(res);
+    if (res.ok) setRes("#resAlert", `rule created · <b>${res.body.category}</b> ≥ ${res.body.threshold} / ${res.body.windowMinutes}m`, "good");
+    else setRes("#resAlert", res.unreachable ? "<b>unreachable</b>" : `define failed <b>${res.status}</b>`, "bad");
+  }));
+  $("#btnEvaluate").addEventListener("click", e => busy(e.target, async () => {
+    const res = await evaluateAlerts(false);
+    if (res.ok) {
+      const firing = (res.body.alerts || []).filter(a => a.firing).length;
+      setRes("#resAlert", `evaluated <b>${(res.body.alerts || []).length}</b> rule(s) · <b>${firing}</b> firing`, firing ? "bad" : "good");
+    } else setRes("#resAlert", res.unreachable ? "<b>unreachable</b>" : `<b>${res.status}</b>`, "bad");
+  }));
+
+  $("#btnRate").addEventListener("click", e => busy(e.target, async () => {
+    setRes("#resRate", "firing 120 requests…");
+    const results = await Promise.all(Array.from({ length: 120 }, () =>
+      fetch(API.summary).then(r => r.status).catch(() => 0)));
+    const ok = results.filter(s => s === 200).length;
+    const limited = results.filter(s => s === 429).length;
+    const other = 120 - ok - limited;
+    inspect({
+      ok: limited > 0, status: limited > 0 ? 429 : 200, method: "GET",
+      path: API.summary + "  ×120 (rate-limit probe)",
+      body: { totalRequests: 120, http200: ok, http429: limited, other }
+    });
+    setRes("#resRate", `<b>${ok}</b> ok, <b>${limited}</b> rate-limited (429)${other ? `, ${other} other` : ""}`, limited ? "bad" : "good");
+  }));
+
+  // ---------- theme toggle ----------
+  const prefersDark = () => window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+  $("#themeBtn").addEventListener("click", () => {
+    const cur = document.documentElement.getAttribute("data-theme") || (prefersDark() ? "dark" : "light");
+    const next = cur === "dark" ? "light" : "dark";
+    document.documentElement.setAttribute("data-theme", next);
+    renderTimeseries(); // re-read theme tokens into the SVG
+  });
+
+  // ---------- resize ----------
+  let rt;
+  window.addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(renderTimeseries, 150); });
+
+  // ---------- boot ----------
+  pollHealth();
+  setInterval(pollHealth, 5000);
+  (async () => {
+    await Promise.all([refreshSummary(true), refreshTimeseries("1h", true), refreshSamples(true), evaluateAlerts(true)]);
+  })();
+</script>
