@@ -95,6 +95,14 @@ public class InMemoryAnalyticsReadStore implements AnalyticsReadStore {
                 timeSeriesQuery.interval(), buckets);
     }
 
+    @Override
+    public long countByCategoryWithin(AttackCategory category, TimeRange window) {
+        return events.stream()
+                .filter(event -> event.category() == category)
+                .filter(event -> window.includes(event.timestamp()))
+                .count();
+    }
+
     private static Instant floorToBucket(Instant timestamp, long intervalSeconds) {
         return Instant.ofEpochSecond(Math.floorDiv(timestamp.getEpochSecond(), intervalSeconds) * intervalSeconds);
     }

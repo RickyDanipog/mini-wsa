@@ -95,6 +95,17 @@ public class PostgresAnalyticsReadStore implements AnalyticsReadStore {
                 timeSeriesQuery.interval(), buckets);
     }
 
+    @Override
+    public long countByCategoryWithin(AttackCategory category, TimeRange window) {
+        Long count = jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM events WHERE category = ? AND timestamp >= ? AND timestamp <= ?",
+                Long.class,
+                category.name(),
+                toOffsetDateTime(window.from()),
+                toOffsetDateTime(window.to()));
+        return count == null ? 0L : count;
+    }
+
     private long countEvents(WhereClause whereClause, Object[] arguments) {
         Long count = jdbcTemplate.queryForObject(
                 "SELECT count(*) FROM events" + whereClause.sql(), Long.class, arguments);

@@ -4,8 +4,10 @@ import com.akamai.wsa.analytics.domain.query.EventSamplesPage;
 import com.akamai.wsa.analytics.domain.query.SampleQuery;
 import com.akamai.wsa.analytics.domain.query.StatisticsQuery;
 import com.akamai.wsa.analytics.domain.query.StatisticsSummary;
+import com.akamai.wsa.analytics.domain.query.TimeRange;
 import com.akamai.wsa.analytics.domain.query.TimeSeriesQuery;
 import com.akamai.wsa.analytics.domain.query.TimeSeriesResult;
+import com.akamai.wsa.contracts.AttackCategory;
 
 public interface AnalyticsReadStore {
     StatisticsSummary summarize(StatisticsQuery statisticsQuery);
@@ -13,4 +15,6 @@ public interface AnalyticsReadStore {
     EventSamplesPage findSamples(SampleQuery sampleQuery);
 
     TimeSeriesResult timeSeries(TimeSeriesQuery timeSeriesQuery);
+
+    long countByCategoryWithin(AttackCategory category, TimeRange window);
 }

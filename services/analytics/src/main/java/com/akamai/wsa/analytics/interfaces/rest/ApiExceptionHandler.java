@@ -10,7 +10,8 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 
-@RestControllerAdvice(assignableTypes = {StatsController.class, SamplesController.class, TimeSeriesController.class})
+@RestControllerAdvice(assignableTypes = {
+        StatsController.class, SamplesController.class, TimeSeriesController.class, AlertsController.class})
 public class ApiExceptionHandler {
 
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
