@@ -341,8 +341,8 @@ docs/               requirements, effort estimate, SDD
 | Doc | Purpose |
 |-----|---------|
 | [`docs/01-requirements.md`](docs/01-requirements.md) | Problem statement, functional & non-functional requirements |
-| [`docs/02-effort-estimate.md`](docs/02-effort-estimate.md) | Per-part effort breakdown |
 | [`docs/03-sdd.md`](docs/03-sdd.md) | System Design Document (distributed architecture, scaling) |
+| [`docs/storage-benchmark.md`](docs/storage-benchmark.md) | Mongo-vs-Postgres benchmark + scaling sweep (storage justification) |
 | [`AGENTS.md`](AGENTS.md) | Engineering guidelines & conventions |
 
 ## What I'd improve with more time

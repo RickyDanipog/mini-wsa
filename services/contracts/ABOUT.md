@@ -1,14 +1,15 @@
 # Contracts — Shared Context (authoritative API)
 
-> **This is the single source of truth for the cross-service message API.**
-> Every service that produces or consumes Kafka messages depends on these types.
-> Before implementing any producer/consumer, read this file. **When any type here
-> changes, log it in `CHANGELOG.md` (same folder) — that log is how every service
-> agent is notified a contract moved.**
+> **This is the single source of truth for the cross-service message API and the
+> shared store schema.** Every service that produces or consumes Kafka messages,
+> or reads/writes the shared store, depends on these types. Each service's
+> `ABOUT.md` and the root `AGENTS.md` point here. **When any type here changes,
+> log it in `CHANGELOG.md` (same folder) — that log is how every service is
+> notified a contract moved.**
 
-Module: `services/contracts` · base package `com.akamai.wsa.contracts` · plain jar (no Spring runtime).
+Module: `services/contracts` · base package `com.akamai.wsa.contracts` · plain library jar (no Spring runtime, just Jackson). Depended on by gateway, enrichment, event-store, analytics, and event-generator.
 
-## Types (as actually committed)
+## Types (as committed)
 
 ### `MessageEnvelope<T>` — wraps every Kafka message
 ```java
@@ -32,7 +33,7 @@ record RawEventMessage(String eventId, Instant timestamp, int configId, String p
 record EnrichedEventMessage(RawEventMessage rawEvent, String attackType, int threatScore, Instant receivedAt)
 ```
 - The original DLR fields live **under `.rawEvent()`** — e.g. `msg.rawEvent().configId()`, `msg.rawEvent().clientIp()`. There is **no** flat `configId()`/`eventId()` accessor and **no** `EnrichedEventMessage.from(...)` factory — build it with the canonical constructor.
-- `attackType` is a **`String`** (the display name, e.g. `"SQL/Command Injection"`). There is **no `contracts.AttackType` enum** — the display name is produced by the enrichment service and carried as text.
+- `attackType` is a **`String`** (the display name, e.g. `"SQL/Command Injection"`), produced by the enrichment service and carried as text. There is **no** `contracts.AttackType` enum.
 - `threatScore` is a plain **`int`** (0–100).
 
 ### `RuleMessage` / `GeoLocationMessage`
@@ -54,14 +55,14 @@ Enums serialize to their **names** (matches the assignment's `"INJECTION"`, `"DE
 | `events.raw` | `clientIp` | `MessageEnvelope<RawEventMessage>` | gateway → enrichment |
 | `events.enriched` | `configId` | `MessageEnvelope<EnrichedEventMessage>` | enrichment → event-store |
 
-Serialization: **JSON** for now (Avro + Schema Registry is a hardening step). Producers and consumers of the same topic must use a matching (de)serializer for the enveloped generic type.
+Serialization is **JSON** (Avro + Schema Registry is a future hardening step). Producers and consumers of the same topic use a matching (de)serializer for the enveloped generic type.
 
 ## Shared Postgres `events` table (event-store writes → analytics reads)
 
-When `wsa.storage=postgres`, event-store writes to and analytics reads from the SAME `events` table (locally one Postgres instance; a read replica in production). This is a cross-service contract — same rule as the Kafka schemas: change it here + log in `CHANGELOG.md`, and both services must be re-checked. Enums are stored as their `name()` strings (matches the JSON encoding). `Instant` values map to `TIMESTAMPTZ` (bind/read as `OffsetDateTime` at UTC to avoid timezone drift).
+When `wsa.storage=postgres`, event-store writes to and analytics reads from the SAME `events` table (locally one Postgres instance; a read replica in production). This is a cross-service contract under the same rule as the Kafka schemas: change it here + log in `CHANGELOG.md`, and re-check both services. Enums are stored as their `name()` strings (matching the JSON encoding). `Instant` values map to `TIMESTAMPTZ` (bind/read as `OffsetDateTime` at UTC to avoid timezone drift).
 
 - **Database:** `wsa` · **Table:** `events` · nested `rule`/`geoLocation` are flattened to columns.
-- **DDL (event-store owns creation — `CREATE TABLE/INDEX IF NOT EXISTS`, analytics never creates):**
+- **DDL (event-store owns creation — `CREATE TABLE/INDEX IF NOT EXISTS`; analytics never creates):**
 ```sql
 CREATE TABLE IF NOT EXISTS events (
     event_id      VARCHAR(128) PRIMARY KEY,
@@ -93,10 +94,14 @@ CREATE INDEX IF NOT EXISTS idx_events_clientip_ts ON events (client_ip, timestam
 CREATE INDEX IF NOT EXISTS idx_events_ts          ON events (timestamp DESC);
 ```
 - **Idempotent write** (matches in-memory `putIfAbsent` / first-write-wins): `INSERT ... ON CONFLICT (event_id) DO NOTHING`.
-- **Ownership:** event-store is the sole writer; analytics is READ-ONLY. Column names, VARCHAR-name enum encoding, and the `event_id` key MUST match exactly across both services.
+- **Ownership:** event-store is the sole writer; analytics is READ-ONLY. Column names, VARCHAR-name enum encoding, and the `event_id` key match exactly across both services. Each service maps the shape with its own class — there is no shared Spring-Data type here, this stays a plain jar.
+
+_Historical note: MongoDB was an evaluated storage candidate and carried its own `events` collection contract here; Postgres won the benchmark (`docs/storage-benchmark.md`) and the Mongo adapters + contract now live on the `candidate/mongo-store` branch. Shipped storage modes are `inmemory` (default) and `postgres`._
 
 ## The change-notification rule
-Contracts are shared context across all service agents. When you change any type
-above: (1) update this file, (2) append an entry to `CHANGELOG.md` with the date,
-what changed, and which services are affected, (3) each affected service's plan
-must be re-checked against the new shape before it is executed.
+Contracts are shared context across all services. When you change any type above:
+1. Update this `ABOUT.md`.
+2. Append an entry to `CHANGELOG.md` (same folder) with the date, what changed, and which services are affected.
+3. Re-check every affected service against the new shape.
+
+`CHANGELOG.md` is the broadcast channel: each service reads it before touching a producer, consumer, or store mapping, so a contract move is seen by all.
