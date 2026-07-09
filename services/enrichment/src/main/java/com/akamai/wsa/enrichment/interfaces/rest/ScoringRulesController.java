@@ -1,8 +1,8 @@
 package com.akamai.wsa.enrichment.interfaces.rest;
 
 import com.akamai.wsa.enrichment.application.rules.ScoringRuleService;
+import com.akamai.wsa.enrichment.domain.port.FactsFactory;
 import com.akamai.wsa.enrichment.domain.port.ScoringRuleRepository;
-import com.akamai.wsa.enrichment.domain.service.FactKey;
 import com.akamai.wsa.enrichment.ruleengine.Rule;
 import com.akamai.wsa.enrichment.ruleengine.RuleCondition;
 import com.akamai.wsa.enrichment.ruleengine.RuleOperator;
@@ -25,9 +25,11 @@ import java.util.List;
 public class ScoringRulesController {
 
     private final ScoringRuleService scoringRuleService;
+    private final FactsFactory factsFactory;
 
-    public ScoringRulesController(ScoringRuleService scoringRuleService) {
+    public ScoringRulesController(ScoringRuleService scoringRuleService, FactsFactory factsFactory) {
         this.scoringRuleService = scoringRuleService;
+        this.factsFactory = factsFactory;
     }
 
     @GetMapping
@@ -38,7 +40,8 @@ public class ScoringRulesController {
     @GetMapping("/options")
     public ScoringRuleOptionsResponse options() {
         return new ScoringRuleOptionsResponse(
-                Arrays.stream(RuleOperator.values()).map(Enum::name).toList(), FactKey.all());
+                Arrays.stream(RuleOperator.values()).map(Enum::name).toList(),
+                List.copyOf(factsFactory.availableFactKeys()));
     }
 
     @PostMapping
