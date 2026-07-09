@@ -191,6 +191,7 @@
   .rules-tbl .ri-id { width: 110px; font-family: ui-monospace, monospace; font-size: 11px; }
   .rules-tbl .ri-id[readonly] { border-color: transparent; background: transparent; color: var(--muted); padding-left: 0; }
   .rules-tbl .ri-title { min-width: 130px; }
+  .rules-tbl .ri-factkey { min-width: 130px; }
   .rules-tbl .ri-operand { min-width: 110px; }
   .rules-tbl .ri-num { width: 56px; text-align: right; }
   .rules-tbl .ri-sel { min-width: 90px; }
@@ -490,6 +491,7 @@
             </table>
           </div>
           <div class="empty" id="rulesEmpty">No rules loaded — is enrichment up? Hit Reload (FR2).</div>
+          <datalist id="factKeyList"></datalist>
         </div>
 
         <div class="card wide">
@@ -1025,6 +1027,17 @@
 
   let ruleOptions = { operators: RULE_OPERATORS, factKeys: RULE_FACT_KEYS };
 
+  const OPERAND_SUGGESTIONS = {
+    "rule.severity": SEVERITIES,
+    "action": ACTIONS,
+    "rule.category": CATEGORIES
+  };
+
+  function fillDatalist(datalist, values) {
+    datalist.innerHTML = "";
+    values.forEach(v => { const o = document.createElement("option"); o.value = v; datalist.appendChild(o); });
+  }
+
   async function loadRuleOptions() {
     const res = await api("GET", API.ruleOptions);
     if (res.ok && res.body) {
@@ -1033,6 +1046,7 @@
         factKeys: (res.body.factKeys || []).length ? res.body.factKeys : RULE_FACT_KEYS
       };
     }
+    fillDatalist($("#factKeyList"), ruleOptions.factKeys);
   }
 
   function optionSelect(cls, values, selected) {
@@ -1074,11 +1088,22 @@
     const tdTitle = document.createElement("td");
     tdTitle.appendChild(textInput("ri-title", isNew ? "" : rule.title, "title"));
     const tdFact = document.createElement("td");
-    tdFact.appendChild(optionSelect("ri-factkey", ruleOptions.factKeys, isNew ? ruleOptions.factKeys[0] : rule.factKey));
+    const factInput = textInput("ri-factkey", isNew ? "" : rule.factKey, "factKey");
+    factInput.setAttribute("list", "factKeyList");
+    tdFact.appendChild(factInput);
     const tdOp = document.createElement("td");
     tdOp.appendChild(optionSelect("ri-operator", ruleOptions.operators, isNew ? "EQUAL_TO" : rule.operator));
     const tdOperand = document.createElement("td");
-    tdOperand.appendChild(textInput("ri-operand", isNew ? "" : rule.operand, "operand"));
+    const operandInput = textInput("ri-operand", isNew ? "" : rule.operand, "operand");
+    const operandListId = "operand-" + uid();
+    const operandList = document.createElement("datalist");
+    operandList.id = operandListId;
+    operandInput.setAttribute("list", operandListId);
+    const syncOperandSuggestions = () => fillDatalist(operandList, OPERAND_SUGGESTIONS[factInput.value] || []);
+    factInput.addEventListener("input", syncOperandSuggestions);
+    syncOperandSuggestions();
+    tdOperand.appendChild(operandInput);
+    tdOperand.appendChild(operandList);
     const tdPts = document.createElement("td"); tdPts.style.textAlign = "right";
     tdPts.appendChild(numInput("ri-output", isNew ? 10 : rule.output));
     const tdPrio = document.createElement("td"); tdPrio.style.textAlign = "right";
