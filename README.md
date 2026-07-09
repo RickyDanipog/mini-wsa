@@ -99,6 +99,34 @@ ignored entirely if you don't use Claude Code.
 
 All endpoints are versioned under `/v1`. Request/response bodies are JSON.
 
+### Quick tour — the mandatory endpoints
+
+Copy-paste against a running stack (`docker compose up`). This exercises the three
+required APIs — ingest (Part 1), stats (Part 3), samples (Part 4); Part 2
+enrichment happens automatically in between, Part 5 is the generator.
+
+```bash
+# Part 1 · ingest one event  → 201 {"acceptedCount":1}
+curl -s -X POST localhost:8081/v1/events/ingest -H 'content-type: application/json' -d '{
+  "eventId": "evt-demo-1", "timestamp": "2026-07-07T09:00:00Z", "configId": 14227,
+  "policyId": "policy-14227", "clientIp": "203.0.113.42", "hostname": "shop.example.com",
+  "path": "/api/v1/login", "method": "POST", "statusCode": 403, "userAgent": "Mozilla/5.0",
+  "rule": { "id": "r-1", "name": "SQLi", "message": "SQL injection on /api/v1/login",
+            "severity": "CRITICAL", "category": "INJECTION" },
+  "action": "DENY", "geoLocation": { "country": "US", "city": "New York" },
+  "requestSize": 256, "responseSize": 512
+}'
+# a batch is the same call with a JSON array body: -d '[ {…}, {…} ]' (validated all-or-nothing)
+
+# enrichment scores it and event-store persists it asynchronously — give it a second or two
+
+# Part 3 · aggregate stats (omit configId/from/to to span everything)
+curl -s "localhost:8084/v1/stats/summary" | jq
+
+# Part 4 · filtered, paginated samples — newest first, with a total for pagination
+curl -s "localhost:8084/v1/events/samples?category=INJECTION&action=DENY&limit=5&offset=0" | jq
+```
+
 ### `POST /v1/events/ingest`  (gateway :8081)
 
 Accepts **a single event object or an array** (batch). Validation is
