@@ -100,7 +100,13 @@
   .main { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
 
   /* header status pill + last-response button */
-  .hpill { font-size: 11.5px; font-weight: 700; padding: 3px 10px; border-radius: 999px; white-space: nowrap; border: 1px solid transparent; font-family: ui-monospace, monospace; font-variant-numeric: tabular-nums; color: var(--muted); background: color-mix(in srgb, var(--muted) 15%, transparent); border-color: color-mix(in srgb, var(--muted) 28%, transparent); }
+  .hpill { font-size: 11.5px; font-weight: 700; padding: 3px 10px; border-radius: 999px; white-space: nowrap; border: 1px solid transparent; font-family: ui-monospace, monospace; font-variant-numeric: tabular-nums; color: var(--muted); background: color-mix(in srgb, var(--muted) 15%, transparent); border-color: color-mix(in srgb, var(--muted) 28%, transparent); cursor: pointer; }
+  .hpill:hover { filter: brightness(1.08); }
+
+  .view-resp { margin-left: auto; font-size: 11px; font-weight: 600; padding: 6px 10px; color: var(--muted); background: transparent; border-color: var(--border); }
+  .view-resp:not(:disabled):hover { color: var(--ink); border-color: var(--muted); background: var(--panel-2); }
+  .view-resp:disabled { opacity: .45; cursor: default; }
+  .hpill:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .hpill.ok  { color: var(--ok);   background: color-mix(in srgb, var(--ok) 16%, transparent);   border-color: color-mix(in srgb, var(--ok) 32%, transparent); }
   .hpill.err { color: var(--crit); background: color-mix(in srgb, var(--crit) 16%, transparent); border-color: color-mix(in srgb, var(--crit) 32%, transparent); }
   .last-btn { font: inherit; font-size: 12px; cursor: pointer; border: 1px solid var(--border); background: var(--panel-2); color: var(--ink-2); border-radius: 8px; padding: 5px 10px; }
@@ -235,7 +241,7 @@
       <div class="hitem"><span class="hdot" id="h-gateway"></span> gateway</div>
       <div class="hitem"><span class="hdot" id="h-enrichment"></span> enrichment</div>
       <div class="hitem"><span class="hdot" id="h-analytics"></span> analytics</div>
-      <span class="hpill" id="statusPill" title="Most recent response status">no request yet</span>
+      <span class="hpill" id="statusPill" title="Click to view the full response" role="button" tabindex="0">no request yet</span>
       <button class="last-btn" id="lastBtn" type="button" disabled aria-haspopup="dialog" aria-controls="drawer">Last response</button>
       <button class="theme-btn" id="themeBtn" type="button" aria-label="Toggle color theme">◐ theme</button>
     </div>
@@ -694,6 +700,7 @@
     pill.className = "hpill " + kind;
     pill.textContent = pillLabel(res);
     $("#lastBtn").disabled = false;
+    document.querySelectorAll(".view-resp").forEach(b => b.disabled = false);
   }
 
   function openDrawer() {
@@ -716,13 +723,29 @@
   function inspect(res) {
     lastResponse = res;
     paint(res);
-    openDrawer();
+  }
+
+  function showLastResponse() {
+    if (lastResponse) { paint(lastResponse); openDrawer(); }
   }
 
   $("#drClose").addEventListener("click", closeDrawer);
   scrim.addEventListener("click", closeDrawer);
   document.addEventListener("keydown", e => { if (e.key === "Escape") closeDrawer(); });
-  $("#lastBtn").addEventListener("click", () => { if (lastResponse) { paint(lastResponse); openDrawer(); } });
+  $("#lastBtn").addEventListener("click", showLastResponse);
+  $("#statusPill").addEventListener("click", showLastResponse);
+  $("#statusPill").addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); showLastResponse(); } });
+
+  document.querySelectorAll(".rail .btn-row").forEach(row => {
+    const viewButton = document.createElement("button");
+    viewButton.type = "button";
+    viewButton.className = "view-resp";
+    viewButton.textContent = "View response";
+    viewButton.title = "Open the raw JSON of the most recent response";
+    viewButton.disabled = true;
+    viewButton.addEventListener("click", showLastResponse);
+    row.appendChild(viewButton);
+  });
 
   function setRes(id, html, kind) {
     const el = $(id);
