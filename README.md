@@ -2,7 +2,7 @@
 
 Mini WSA ingests security events, classifies and scores them, and exposes
 statistics and individual samples. The backend runs as one Java 21 Spring Boot
-application with PostgreSQL. A separate Python script generates sample traffic.
+application with PostgreSQL. A standalone Java generator produces sample traffic.
 
 ## Run it
 
@@ -22,10 +22,10 @@ scoring matrix and runs the API against PostgreSQL in Testcontainers.
 
 ## Generate data
 
-Python 3.10 or later is enough to feed 10,000 events into the API.
+Run the generator directly with JDK 21 to feed 10,000 events into the API.
 
 ```bash
-python3 scripts/generate_events.py --count 10000 --waves 5 \
+java scripts/GenerateEvents.java --count 10000 --waves 5 \
   --post http://localhost:8080/v1/events/ingest
 ```
 

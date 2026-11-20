@@ -3,7 +3,7 @@
 Run this from the repository root to send a small dataset to the local stack:
 
 ```bash
-python3 scripts/generate_events.py --count 200 --waves 3 \
+java scripts/GenerateEvents.java --count 200 --waves 3 \
   --post http://localhost:8080/v1/events/ingest
 ```
 
