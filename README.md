@@ -418,6 +418,12 @@ examples in the owning service's README):
 - **B4 — Rate limiting.** `429` on `/v1/stats` + `/v1/events` when a client IP
   exceeds the configured rate (`wsa.rate-limit`). → [`services/analytics`](services/analytics)
 
+## What I’d improve with more time
+
+I’d give the `events.raw` and `events.enriched` consumers a bounded retry policy
+and send records that still fail to a dead-letter topic for inspection so the
+partition can continue processing subsequent events.
+
 ## What was challenging
 
 - **Keeping the domain pure while swapping databases.** The interesting design
