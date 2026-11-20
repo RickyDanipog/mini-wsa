@@ -1,2 +1,0 @@
-org.springframework.boot.autoconfigure.AutoConfigurationImportFilter=\
-com.akamai.wsa.enrichment.infrastructure.config.RulesStorageAutoConfigurationFilter

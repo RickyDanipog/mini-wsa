@@ -1,8 +1,8 @@
 ---
 name: wsa-generate
-description: Generate Mini WSA security events and attack waves as JSON or send them to the local gateway.
+description: Generate synthetic Mini WSA events and repeated IP and path bursts as JSON or send them to the local API.
 ---
 
-Use the existing Maven generator module. Pick the output mode from the request and distinguish events accepted by the gateway from events visible in analytics.
+Use the Python generator and select the output mode the user requested. Use a fresh seed when adding events to an existing dataset.
 
 Read the [workflow guide](../../../docs/workflows/generate.md) for the commands and checks.

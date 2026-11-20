@@ -1,8 +1,8 @@
 ---
 name: wsa-prepare
-description: Check Mini WSA development prerequisites and set up missing tools on macOS when requested.
+description: Check Mini WSA prerequisites for running the stack, generating events, or testing the Java app.
 ---
 
-Check the local tools before suggesting or installing anything. The setup guide covers Homebrew on macOS and lists the prerequisites for other platforms.
+Check the tools needed for the workflow the user wants to run.
 
 Read the [workflow guide](../../../docs/workflows/prepare.md) for the commands and checks.

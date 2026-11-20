@@ -1,449 +1,121 @@
-# Mini WSA — Mini Security Analytics Pipeline
+# Mini WSA
 
-An event-driven backend that ingests security event logs (DLRs), classifies and
-enriches them, computes a deterministic threat score, persists them, and exposes
-analytics APIs over the result. It is the backend brain a SOC dashboard would
-query — not the UI. Akamai CSI backend take-home.
+Mini WSA ingests security events, classifies and scores them, and exposes
+statistics and individual samples. The backend runs as one Java 21 Spring Boot
+application with PostgreSQL. A separate Python script generates sample traffic.
 
-The pipeline is built as **five small services connected by Kafka**, each
-hexagonal internally (pure domain, ports, swappable adapters). Storage is chosen
-per service at runtime via a single `wsa.storage` switch — the same business
-logic runs unchanged over in-memory or PostgreSQL, with Redis for the offender window.
+## Run it
 
-## Architecture
+Run `docker compose up --build` with Docker Compose. The API listens on
+`http://localhost:8080`. Compose creates a PostgreSQL volume for the event data.
+Use `docker compose down` to stop the stack and preserve the data.
+If port 8080 is in use, run `WSA_PORT=8088 docker compose up --build` and
+use port 8088 in the examples.
 
-```
- event-generator ──REST──▶  gateway   ──events.raw──▶  enrichment  ──events.enriched──▶  event-store
-   (Part 5, CLI)             :8081                       :8082                              :8083
-                             validate                    classify + score                  persist
-                             publish                     offender window                     │
-                                                          (in-memory | Redis)                 ▼
-                                                                                    shared store (PostgreSQL)
-                                                                                              ▲
-                                                                                        analytics :8084
-                                                                                    /stats/summary, /events/samples
-```
+To run with a PostgreSQL instance you already have, supply
+`SPRING_DATASOURCE_URL`, `SPRING_DATASOURCE_USERNAME`, and
+`SPRING_DATASOURCE_PASSWORD`, then run `mvn spring-boot:run`. The application
+creates its tables and indexes on startup.
 
-- **[gateway](services/gateway)** — validates single or batched events, stamps a correlation id, publishes `events.raw` (keyed by `clientIp`).
-- **[enrichment](services/enrichment)** — classifies `rule.category` → `attackType`, computes `threatScore`, flags repeat-offender IPs via a sliding window, publishes `events.enriched` (keyed by `configId`).
-- **[event-store](services/event-store)** — consumes `events.enriched` and persists the full record (sole writer, de-duplicated by `eventId`).
-- **[analytics](services/analytics)** — reads the same store read-only and serves aggregate stats + filtered, paginated samples.
-- **[event-generator](services/event-generator)** — a CLI that synthesizes realistic events and attack waves and feeds them to the gateway.
-- **demo-ui** (`localhost:8090`) — the **Simulation Console**: a single-file dashboard (nginx-served, same-origin proxied) that exercises every use case live — ingest, attack waves with a configurable inter-wave interval, custom-event crafting with score read-back, scoring-rule CRUD, stats/samples/time-series, alerts, and the rate limiter.
+Run `mvn clean verify` with JDK 21, Maven, and Docker. The suite exercises the
+scoring matrix and runs the API against PostgreSQL in Testcontainers.
 
-Each service has its own README with entry points, configuration, and a
-standalone run command.
+## Generate data
 
-The shared Kafka message API and the shared store schema live in
-[`services/contracts`](services/contracts) and are the single source of truth
-for cross-service shapes. Design detail: [`docs/03-sdd.md`](docs/03-sdd.md).
-
-## Tech stack
-
-Java 21 · Spring Boot 3.3 · Maven (multi-module reactor) · Apache Kafka (KRaft) ·
-Redis · PostgreSQL · Docker Compose · JUnit 5 + Testcontainers.
-
-## Build & run
-
-Prerequisites: **JDK 21**, **Maven**, **Docker** (for Compose and the integration tests).
+Python 3.10 or later is enough to feed 10,000 events into the API.
 
 ```bash
-# build everything + run all tests (unit + Testcontainers integration)
-mvn clean verify
-
-# bring up the full pipeline (Kafka + Postgres + Redis + 4 services + demo console)
-docker compose up --build
-
-# tail one service
-docker compose logs -f analytics
+python3 scripts/generate_events.py --count 10000 --waves 5 \
+  --post http://localhost:8080/v1/events/ingest
 ```
 
-Once the stack is up, open the **Simulation Console at http://localhost:8090** — a
-single-page dashboard that drives every use case (ingest, attack waves, custom-event
-scoring, live rule editing, stats/samples/time-series, alerts, rate limiting) with no
-curl. The services listen on `:8081`–`:8084`. Health/liveness:
+Use `--output events.json` to save a JSON array, or omit both output flags for
+stdout. Each wave repeats an IP and path across a consecutive group of events.
+Set `--seed` and `--start` for reproducible output. Change the seed when adding a
+new dataset to the same database, because each seed produces the same event IDs.
+
+## API
+
+| Method and path | Behavior |
+| --- | --- |
+| `POST /v1/events/ingest` | Accepts a single DLR or an array. Returns `201` with `acceptedCount`. Invalid input returns `400` with field details and writes nothing. |
+| `GET /v1/stats/summary` | Returns total events, counts and average scores by category, counts by action, plus the top 10 IPs and paths. Filters by `configId`, `from`, and `to`. |
+| `GET /v1/events/samples` | Returns `total`, `limit`, `offset`, and `results` ordered by event timestamp descending. Supports the same filters plus `category` and `action`. The default limit is 20 and the maximum is 100. |
+| `GET /v1/stats/timeseries` | Groups events into UTC buckets at `interval=1m`, `5m`, or `1h` using the summary filters. |
+| `POST /v1/alerts/define` | Saves a rule with `category`, `threshold`, and `windowMinutes`. |
+| `GET /v1/alerts/evaluate` | Evaluates each rule against event timestamps within its rolling window. A rule fires when its count exceeds its threshold. |
+
+Query filters are optional. Time filters accept ISO-8601 timestamps and include
+both bounds. The stats and samples APIs share a budget of 100 requests per IP
+per minute by default. Excess requests return `429` with `Retry-After`. Set
+`WSA_RATE_LIMIT_REQUESTS_PER_MINUTE` to adjust the budget.
 
 ```bash
-curl -s localhost:8081/actuator/health   # gateway   (repeat for 8082/8083/8084)
-curl -s localhost:8081/v1/ping           # {"status":"ok","service":"gateway"}
+curl -sS -X POST http://localhost:8080/v1/events/ingest \
+  -H 'Content-Type: application/json' -d '{
+    "eventId":"evt-example","timestamp":"2026-11-20T09:00:00Z","configId":14227,
+    "policyId":"policy-14227","clientIp":"203.0.113.42","hostname":"shop.example.com",
+    "path":"/api/v1/login","method":"POST","statusCode":403,"userAgent":"Mozilla/5.0",
+    "rule":{"id":"r1","name":"SQL injection","message":"Synthetic event",
+            "severity":"CRITICAL","category":"INJECTION"},
+    "action":"DENY","geoLocation":{"country":"US","city":"New York"},
+    "requestSize":256,"responseSize":512
+  }'
+
+curl -sS 'http://localhost:8080/v1/stats/summary?configId=14227'
+curl -sS 'http://localhost:8080/v1/events/samples?category=INJECTION&action=DENY&limit=5'
+curl -sS 'http://localhost:8080/v1/stats/timeseries?configId=14227&interval=5m'
+curl -sS -X POST http://localhost:8080/v1/alerts/define \
+  -H 'Content-Type: application/json' \
+  -d '{"category":"INJECTION","threshold":3,"windowMinutes":10}'
+curl -sS http://localhost:8080/v1/alerts/evaluate
 ```
 
-Run a single service locally without Docker (defaults to in-memory storage, no
-external deps needed):
+## Design
 
-```bash
-mvn -pl services/gateway spring-boot:run
+```text
+Generator / API client
+        |
+    Spring Boot
+    |-- Ingestion: validate, classify, score, persist
+    |-- Analytics: summary, samples, time-series, alerts
+        |
+    PostgreSQL
 ```
 
-## Review the project with Codex
+Each successful request commits before returning `201`, so its events are
+available immediately to queries. The application assigns `receivedAt` using
+its clock and stores the original DLR fields plus `attackType`, `threatScore`,
+and `receivedAt`. Repeated event IDs keep the first stored record.
 
-Open the repository root in Codex. The repository skills live in
-[`.agents/skills/`](.agents/skills). Use `$` to select a skill by name. Start
-with `$wsa-deploy`, then run `$wsa-walkthrough` against the local stack.
+The score adds severity points (40, 30, 20, 10 for critical through low),
+action points (20 for deny, 10 for alert, 0 for monitor), 15 for a path containing
+`/admin` or `/login`, and 15 once the current event makes more than five events
+from the same IP within ten minutes. The result is capped at 100.
 
-| Codex skill | Workflow guide |
-|-------------|----------------|
-| `$wsa-prepare` | [Check development prerequisites](docs/workflows/prepare.md) |
-| `$wsa-deploy` | [Start the stack and check its health](docs/workflows/deploy.md) |
-| `$wsa-walkthrough` | [Verify the pipeline end to end](docs/workflows/walkthrough.md) |
-| `$wsa-generate` | [Generate events and attack waves](docs/workflows/generate.md) |
-| `$wsa-add-rule` | [Add a scoring rule and check its effect](docs/workflows/add-rule.md) |
-| `$wsa-reset` | [Reset the local data volumes](docs/workflows/reset.md) |
-| `$wsa-profile-storage` | [Benchmark storage and consumer scaling](docs/workflows/profile-storage.md) |
+PostgreSQL gives the write path one transaction and lets analytics filter,
+aggregate, and paginate in SQL. Indexed columns support the time and config
+queries and the per-IP offender lookup. JSONB holds the enriched payload
+returned by samples. The older distributed implementation uses Kafka and Redis and is preserved on
+the `microservices` branch.
 
-The guides also contain the terminal commands. For code changes, see
-[AGENTS.md](AGENTS.md) and the affected service’s ABOUT.md and README.md.
+### What was challenging
 
-## API reference
+Two overlapping batches can both see the same count for one IP. Ingestion
+takes transaction-scoped PostgreSQL locks for the affected event IDs and IPs
+in a consistent order, so retries and overlapping batches keep the scoring
+window consistent. The integration tests cover the concurrent sixth-event
+boundary as well as the single-batch case.
 
-All endpoints are versioned under `/v1`. Request/response bodies are JSON.
+### What I’d improve with more time
 
-### Quick tour — the mandatory endpoints
+I’d profile the per-event SQL round trips and batch them where it pays off.
+I’d use the measured ingestion and query latencies to decide when to split the
+write path or move the offender window out of PostgreSQL.
 
-Copy-paste against a running stack (`docker compose up`). This exercises the three
-required APIs — ingest (Part 1), stats (Part 3), samples (Part 4); Part 2
-enrichment happens automatically in between, Part 5 is the generator.
+## Codex
 
-```bash
-# Part 1 · ingest one event  → 201 {"acceptedCount":1}
-curl -s -X POST localhost:8081/v1/events/ingest -H 'content-type: application/json' -d '{
-  "eventId": "evt-demo-1", "timestamp": "2026-07-07T09:00:00Z", "configId": 14227,
-  "policyId": "policy-14227", "clientIp": "203.0.113.42", "hostname": "shop.example.com",
-  "path": "/api/v1/login", "method": "POST", "statusCode": 403, "userAgent": "Mozilla/5.0",
-  "rule": { "id": "r-1", "name": "SQLi", "message": "SQL injection on /api/v1/login",
-            "severity": "CRITICAL", "category": "INJECTION" },
-  "action": "DENY", "geoLocation": { "country": "US", "city": "New York" },
-  "requestSize": 256, "responseSize": 512
-}'
-# a batch is the same call with a JSON array body: -d '[ {…}, {…} ]' (validated all-or-nothing)
-
-# enrichment scores it and event-store persists it asynchronously — give it a second or two
-
-# Part 3 · aggregate stats (omit configId/from/to to span everything)
-curl -s "localhost:8084/v1/stats/summary" | jq
-
-# Part 4 · filtered, paginated samples — newest first, with a total for pagination
-curl -s "localhost:8084/v1/events/samples?category=INJECTION&action=DENY&limit=5&offset=0" | jq
-```
-
-### `POST /v1/events/ingest`  (gateway :8081)
-
-Accepts **a single event object or an array** (batch). Validation is
-**all-or-nothing**: if any event in the batch is invalid the whole request is
-rejected. Every accepted event is stamped with a server-side `receivedAt`
-at the gateway. An optional `x-correlation-id` header is propagated through the
-pipeline (one is generated if absent).
-
-```bash
-curl -s -X POST localhost:8081/v1/events/ingest \
-  -H 'content-type: application/json' \
-  -H 'x-correlation-id: demo-001' \
-  -d '[
-    {
-      "eventId": "evt-0001",
-      "timestamp": "2026-07-07T09:00:00Z",
-      "configId": 14227,
-      "policyId": "policy-14227",
-      "clientIp": "203.0.113.42",
-      "hostname": "shop.example.com",
-      "path": "/api/v1/login",
-      "method": "POST",
-      "statusCode": 403,
-      "userAgent": "Mozilla/5.0",
-      "rule": {
-        "id": "rule-INJECTION",
-        "name": "SQLi signature",
-        "message": "SQL injection detected on /api/v1/login",
-        "severity": "CRITICAL",
-        "category": "INJECTION"
-      },
-      "action": "DENY",
-      "geoLocation": { "country": "US", "city": "New York" },
-      "requestSize": 256,
-      "responseSize": 512
-    }
-  ]'
-```
-
-`201 Created`:
-
-```json
-{ "acceptedCount": 1 }
-```
-
-`400 Bad Request` on a validation failure (per-field detail, indexed by batch position):
-
-```json
-{
-  "error": {
-    "code": "VALIDATION_FAILED",
-    "message": "one or more events are invalid",
-    "details": [
-      { "field": "[0].clientIp", "message": "must not be blank" },
-      { "field": "[0].rule",     "message": "must not be null" }
-    ]
-  }
-}
-```
-
-A body that cannot be parsed at all returns `code: "MALFORMED_REQUEST"`.
-
-**Enums** (validated on ingest):
-`rule.category` ∈ `INJECTION, XSS, PROTOCOL_VIOLATION, DATA_LEAKAGE, BOT, DOS, RATE_LIMIT` ·
-`rule.severity` ∈ `CRITICAL, HIGH, MEDIUM, LOW` ·
-`action` ∈ `DENY, ALERT, MONITOR`.
-
-### `GET /v1/stats/summary`  (analytics :8084)
-
-Aggregates over an optional config + time range. All query params are optional;
-omitting `configId` aggregates across all configs, omitting `from`/`to` uses the
-full available range.
-
-| Param | Meaning |
-|-------|---------|
-| `configId` | restrict to one config |
-| `from`, `to` | ISO-8601 instants bounding `timestamp` |
-
-```bash
-curl -s "localhost:8084/v1/stats/summary?configId=14227&from=2026-07-07T00:00:00Z&to=2026-07-08T00:00:00Z"
-```
-
-```json
-{
-  "configId": 14227,
-  "timeRange": { "from": "2026-07-07T00:00:00Z", "to": "2026-07-08T00:00:00Z" },
-  "totalEvents": 6,
-  "byCategory": {
-    "INJECTION": { "count": 6, "avgThreatScore": 77.5 }
-  },
-  "byAction": { "DENY": 6 },
-  "topAttackers": [
-    { "clientIp": "203.0.113.42", "count": 6, "avgThreatScore": 77.5 }
-  ],
-  "topTargetedPaths": [
-    { "path": "/api/v1/login", "count": 6 }
-  ]
-}
-```
-
-`topAttackers` and `topTargetedPaths` are the top 10 by count (ties broken by
-key ascending); `avgThreatScore` is rounded to one decimal.
-
-### `GET /v1/events/samples`  (analytics :8084)
-
-Filtered, paginated enriched records, sorted by `timestamp` **descending**,
-with a `total` count of all matches.
-
-| Param | Default | Notes |
-|-------|---------|-------|
-| `configId`, `from`, `to` | — | same as stats |
-| `category` | — | one `AttackCategory` |
-| `action` | — | one `Action` |
-| `limit` | 20 | clamped to `[1, 100]` |
-| `offset` | 0 | for paging |
-
-```bash
-curl -s "localhost:8084/v1/events/samples?category=INJECTION&limit=1"
-```
-
-```json
-{
-  "total": 6,
-  "limit": 1,
-  "offset": 0,
-  "results": [
-    {
-      "eventId": "evt-0006",
-      "timestamp": "2026-07-07T09:05:00Z",
-      "configId": 14227,
-      "policyId": "policy-14227",
-      "clientIp": "203.0.113.42",
-      "hostname": "shop.example.com",
-      "path": "/api/v1/login",
-      "method": "POST",
-      "statusCode": 403,
-      "userAgent": "Mozilla/5.0",
-      "rule": {
-        "id": "rule-INJECTION",
-        "name": "SQLi signature",
-        "message": "SQL injection detected on /api/v1/login",
-        "severity": "CRITICAL",
-        "category": "INJECTION"
-      },
-      "action": "DENY",
-      "geoLocation": { "country": "US", "city": "New York" },
-      "requestSize": 256,
-      "responseSize": 512,
-      "attackType": "SQL/Command Injection",
-      "threatScore": 90,
-      "receivedAt": "2026-07-07T09:05:00.120Z"
-    }
-  ]
-}
-```
-
-## Threat scoring
-
-Scoring is deterministic and additive, capped at 100. It is driven by a small
-**data-driven rule engine** in the enrichment service: rules are rows (not code)
-of `type = "SCORING"` — `(fact_key, operator, operand) → points` — that the engine
-sums over the matched rules. The default rules reproduce the matrix below, and a
-user can add/edit/disable one at runtime via the enrichment **`/v1/rules`
-REST API** (or its editor panel in the Simulation Console) — the engine re-reads
-rules per event, so a change applies to the next event with no restart. Storage
-is `wsa.rules=inmemory` (the built-in defaults) or `postgres` (a seeded `rules`
-table). The engine itself is subject-agnostic — scoring is just one rule `type`.
-
-| Component | Contribution |
-|-----------|--------------|
-| **Severity** | `CRITICAL` +40 · `HIGH` +30 · `MEDIUM` +20 · `LOW` +10 |
-| **Action** | `DENY` +20 · `ALERT` +10 · `MONITOR` +0 |
-| **Sensitive path** | path contains `/admin` or `/login` → +15 |
-| **Repeat offender** | **> 5 events from the same `clientIp` in the last 10 minutes** → +15 |
-| **Cap** | total clamped to `100` |
-
-`attackType` is a fixed classification of `rule.category`: `INJECTION` →
-"SQL/Command Injection", `XSS` → "Cross-Site Scripting", `PROTOCOL_VIOLATION` →
-"Protocol Anomaly", `DATA_LEAKAGE` → "Data Exfiltration", `BOT` → "Bot
-Activity", `DOS` → "Denial of Service", `RATE_LIMIT` → "Rate Limiting".
-
-The repeat-offender check is the one **stateful** part of scoring: it counts the
-client IP's events in a sliding window at ingest time (record-then-read; the 6th
-event from an IP is the first to be flagged). That window lives behind the
-`OffenderWindow` port — in-memory for dry runs, Redis (per-IP sorted set with a
-TTL) under load.
-
-## Storage — the `wsa.storage` switch
-
-Every persistence concern sits behind a port, and each service selects its
-adapter at runtime with a single property (`wsa.storage`, or env `WSA_STORAGE`).
-Adapters are gated by `@ConditionalOnProperty`; the matching database
-auto-configuration is gated by an `AutoConfigurationImportFilter`, so a service
-running in a non-matching mode opens **no** connection to that database.
-
-| `wsa.storage` | enrichment (offender window) | event-store / analytics (event store) |
-|---------------|------------------------------|----------------------------------------|
-| `inmemory` (default) | in-memory sliding window | in-memory map |
-| `redis` | Redis sorted-set window + dedup | (pairs with postgres for the store) |
-| `postgres` | in-memory window | shared Postgres `events` table |
-
-The default Compose stack runs enrichment on **Redis** and event-store +
-analytics on **PostgreSQL** (event-store is the sole writer; analytics reads the
-same table read-only, standing in for a read replica). Point a service at
-another backend with env vars, e.g.
-`WSA_STORAGE=postgres SPRING_DATASOURCE_URL=jdbc:postgresql://…`.
-
-### Why this storage stack
-
-PostgreSQL was chosen **after benchmarking it head-to-head against MongoDB** —
-both were implemented behind the same ports and driven with an identical seeded
-100k-event workload (full method + results in
-[`docs/storage-benchmark.md`](docs/storage-benchmark.md)).
-
-| Metric (100k, medians) | MongoDB | PostgreSQL |
-|---|--:|--:|
-| `/v1/stats/summary` p95 (aggregation) | 1,468 ms | **431 ms** (3.4×) |
-| `/v1/events/samples` p95 | 106 ms | **36 ms** (2.9×) |
-| Write persist rate | 1,104 ev/s | **1,302 ev/s** (1.18×) |
-
-For this aggregation-heavy analytics workload, a relational store with
-`(config_id, timestamp)` / `(client_ip, timestamp)` indexes beat Mongo's
-aggregation pipeline by ~3× on the query hot path and ~18% on writes, and it
-scales with Kafka partitions + consumer replicas up to a measured **~2,200 ev/s
-knee** (4 replicas / 4 partitions) before the single host becomes CPU-bound.
-**Redis** stays for the enrichment offender window — a sliding-window counter, a
-different concern from the event store. The Mongo adapter and the full benchmark
-harness are preserved on the `candidate/mongo-store` branch.
-
-## Data generator
-
-Part 5 is a seedable CLI (`services/event-generator`) that produces realistic
-events and attack-wave bursts (repeated IP+path) and can POST them straight to
-the gateway. It is deterministic — a given seed reproduces the same dataset.
-
-```bash
-mvn -pl services/event-generator spring-boot:run \
-  -Dspring-boot.run.arguments="\
-    --wsa.generator.total-events=10000 \
-    --wsa.generator.wave-count=5 \
-    --wsa.generator.output-mode=HTTP \
-    --wsa.generator.target-url=http://localhost:8081"
-```
-
-`output-mode` is `HTTP` (feed the gateway), `JSON_FILE`, or `STDOUT`.
-
-## Testing
-
-- **Unit tests** cover the scoring matrix and classification edge cases (the
-  explicitly-graded deterministic logic) and the analytics aggregations.
-- **Integration tests** use **Testcontainers** against real Postgres / Redis,
-  so adapter behavior is verified against the actual engines rather
-  than mocks. They require a running Docker daemon; `mvn verify` runs them.
-- Cross-service serialization is exercised end-to-end (gateway → enrichment →
-  event-store) over an embedded broker.
-
-## Project layout
-
-```
-services/
-  contracts/        shared Kafka message API + shared store schema (source of truth)
-  gateway/          :8081  ingestion + validation → events.raw
-  enrichment/       :8082  classify + score → events.enriched
-  event-store/      :8083  persist enriched events (sole writer)
-  analytics/        :8084  stats + samples (read-only)
-  event-generator/  CLI    synthetic events + attack waves
-docs/               requirements, effort estimate, SDD
-```
-
-| Doc | Purpose |
-|-----|---------|
-| [`docs/01-requirements.md`](docs/01-requirements.md) | Problem statement, functional & non-functional requirements |
-| [`docs/03-sdd.md`](docs/03-sdd.md) | System Design Document (distributed architecture, scaling) |
-| [`docs/storage-benchmark.md`](docs/storage-benchmark.md) | Mongo-vs-Postgres benchmark + scaling sweep (storage justification) |
-| [`AGENTS.md`](AGENTS.md) | Engineering guidelines & conventions |
-
-## Bonus features
-
-Beyond the five required parts, these optional challenges are implemented (curl
-examples in the owning service's README):
-
-- **B2 — Streaming ingestion.** In addition to REST, the gateway consumes events
-  from the Kafka topic `events.ingest` (same validation, republished to
-  `events.raw`) — a second inbound adapter over one shared `EventIngestionService`.
-  Producer script: `scripts/produce-to-kafka.sh`. → [`services/gateway`](services/gateway)
-- **B3 — Time-series.** `GET /v1/stats/timeseries?interval={1m|5m|1h}` — event
-  counts bucketed by interval. → [`services/analytics`](services/analytics)
-- **B1 — Alerting.** `POST /v1/alerts/define` + `GET /v1/alerts/evaluate` —
-  "N events of category X within Y minutes" → firing alerts. → [`services/analytics`](services/analytics)
-- **B4 — Rate limiting.** `429` on `/v1/stats` + `/v1/events` when a client IP
-  exceeds the configured rate (`wsa.rate-limit`). → [`services/analytics`](services/analytics)
-
-## What I’d improve with more time
-
-I’d give the `events.raw` and `events.enriched` consumers a bounded retry policy
-and send records that still fail to a dead-letter topic for inspection so the
-partition can continue processing subsequent events.
-
-## What was challenging
-
-- **Keeping the domain pure while swapping databases.** The interesting design
-  work was making one scoring/analytics implementation run unchanged over four
-  storage backends. Getting the auto-configuration gating right — so a service
-  in `inmemory` mode makes *zero* attempts to reach a database it isn't
-  configured for — took an `AutoConfigurationImportFilter` rather than the simpler
-  `spring.autoconfigure.exclude`, which cannot be cleared by an environment
-  variable at runtime.
-- **Closing the analytics loop across processes.** Splitting into services means
-  analytics can't just read enrichment's memory. The fix was a shared store
-  contract (event-store writes, analytics reads the same collection/table) —
-  which then had to produce identical aggregation results whether backed by a
-  SQL `GROUP BY` or the in-memory reference implementation (and, during the
-  storage evaluation, Mongo's aggregation pipeline) — tie-breaks included.
-- **Deterministic scoring with a stateful rule.** The repeat-offender bonus is a
-  read-during-write against a sliding window — easy in memory, but it is exactly
-  the part with real performance implications at scale, which is why it sits
-  behind its own port with a Redis adapter.
-- **Testcontainers vs. the local Docker Engine.** A Docker API-version mismatch
-  meant the client defaulted to a version the daemon rejected; pinning the
-  Testcontainers API version at the reactor level was needed to get integration
-  tests running reliably.
+Open the repository root and select `$wsa-deploy`, followed by
+`$wsa-walkthrough`. The terminal commands are in
+[the deploy guide](docs/workflows/deploy.md) and
+[the walkthrough](docs/workflows/walkthrough.md).

@@ -1,0 +1,13 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/wsa
+    username: wsa
+    password: wsa
+  sql:
+    init:
+      mode: always
+  jackson:
+    deserialization:
+      fail-on-numbers-for-enums: true
+      accept-float-as-int: false
+      fail-on-trailing-tokens: true
