@@ -111,9 +111,7 @@ src/main/java/com/akamai/wsa/generator/
 
 ## Related
 
-- The repo's `/generate` skill is a thin wrapper that drives this module against
-  a running pipeline (seeding data / firing attack waves) — this README is the
-  underlying tool it invokes.
+- [Generate events and attack waves](../../docs/workflows/generate.md) walks through seeding a running pipeline.
 - [`../contracts`](../contracts) — the event shape emitted here mirrors the
   gateway's ingest DTO / `RawEventMessage`, the single source of truth.
 - Root [`../../README.md`](../../README.md) — full pipeline overview.

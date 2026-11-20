@@ -14,6 +14,16 @@
 
 ---
 
+## Codex workflows
+
+The repository skills are in [`.agents/skills/`](.agents/skills). Use
+`$wsa-deploy` to start and check the local Compose stack and
+`$wsa-walkthrough` to verify the assignment end to end. The
+[README skill list](README.md#review-the-project-with-codex) covers the other
+workflows.
+
+---
+
 ## 0. What this is
 
 A **mini security analytics pipeline** ("Mini WSA") — an Akamai CSI backend

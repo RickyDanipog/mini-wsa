@@ -1,14 +1,9 @@
----
-name: add-rule
-description: Add (or edit) a scoring rule on the enrichment rule engine and demonstrate its effect — POST the rule to /v1/rules, ingest one event crafted to match it, and show the threat score rose by the rule's points, proving rules apply live with no restart. Use when the user wants to add/change a scoring rule, demo the data-driven rule engine, or show how a rule affects new events.
----
-
-# /add-rule — add a scoring rule and prove it works
+# Add a scoring rule and check its effect
 
 Adds a rule to the enrichment scoring engine and demonstrates the before/after effect on a fresh event. The engine re-reads enabled rules on **every** event, so a new rule applies to the next event with no restart.
 
 ## Preconditions
-- Stack up (`curl -fs localhost:8082/actuator/health`). If down, invoke **`deploy`** first.
+- Stack up (`curl -fs localhost:8082/actuator/health`). If down, follow [Start the stack and check its health](deploy.md).
 - Endpoints: enrichment rules `:8082/v1/rules`, gateway ingest `:8081/v1/events/ingest`, analytics samples `:8084/v1/events/samples` (all also reachable same-origin via `localhost:8090/api/{enrichment,gateway,analytics}/…`).
 
 ## Rule shape
