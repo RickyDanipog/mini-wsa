@@ -6,6 +6,7 @@ import com.akamai.wsa.analytics.domain.query.EventSamplesPage;
 import com.akamai.wsa.analytics.domain.query.SampleQuery;
 import com.akamai.wsa.contracts.Action;
 import com.akamai.wsa.contracts.AttackCategory;
+import com.akamai.wsa.contracts.Severity;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -18,6 +19,7 @@ import java.util.List;
 
 import static com.akamai.wsa.analytics.testsupport.EnrichedEventViews.view;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.nullValue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -62,6 +64,23 @@ class SamplesControllerTest {
                 .andExpect(jsonPath("$.results[0].threatScore").value(40))
                 .andExpect(jsonPath("$.results[0].receivedAt").exists())
                 .andExpect(jsonPath("$.results[1].eventId").value("evt-1"));
+    }
+
+    @Test
+    void returnsNullForMissingOptionalGeoLocation() throws Exception {
+        Instant timestamp = Instant.parse("2026-05-20T14:10:00Z");
+        EnrichedEventView event = new EnrichedEventView(
+                "evt-no-geo", timestamp, 14227, "policy-14227", "198.51.100.7",
+                "app.example.com", "/search", "GET", 200, "curl/8.0",
+                "rule-bot", "Bot", "Bot activity detected", Severity.LOW, AttackCategory.BOT,
+                Action.MONITOR, null, null, 512L, 1024L, "Bot Activity", 10, timestamp);
+        when(analyticsQueryService.findSamples(any()))
+                .thenReturn(new EventSamplesPage(1, 20, 0, List.of(event)));
+
+        mockMvc.perform(get("/v1/events/samples"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.results[0].eventId").value("evt-no-geo"))
+                .andExpect(jsonPath("$.results[0].geoLocation").value(nullValue()));
     }
 
     @Test
