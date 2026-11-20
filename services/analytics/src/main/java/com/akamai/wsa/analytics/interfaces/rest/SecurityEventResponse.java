@@ -48,7 +48,9 @@ public record SecurityEventResponse(
                 new RuleResponse(event.ruleId(), event.ruleName(), event.ruleMessage(),
                         event.severity(), event.category()),
                 event.action(),
-                new GeoLocationResponse(event.country(), event.city()),
+                event.country() == null && event.city() == null
+                        ? null
+                        : new GeoLocationResponse(event.country(), event.city()),
                 event.requestSize(),
                 event.responseSize(),
                 event.attackType(),

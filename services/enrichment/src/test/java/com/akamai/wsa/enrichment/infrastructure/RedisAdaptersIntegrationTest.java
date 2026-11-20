@@ -54,22 +54,32 @@ class RedisAdaptersIntegrationTest {
     @Test
     void sixthEventInWindowIsFirstToCrossRepeatOffenderThreshold() {
         String clientIp = "10.0.0.1";
-        offenderWindow.recordEvent(clientIp, NOW.minus(Duration.ofMinutes(9)));
-        offenderWindow.recordEvent(clientIp, NOW.minus(Duration.ofMinutes(7)));
-        offenderWindow.recordEvent(clientIp, NOW.minus(Duration.ofMinutes(5)));
-        offenderWindow.recordEvent(clientIp, NOW.minus(Duration.ofMinutes(3)));
-        offenderWindow.recordEvent(clientIp, NOW.minus(Duration.ofMinutes(1)));
+        offenderWindow.recordEvent(clientIp, "evt-56", NOW.minus(Duration.ofMinutes(9)));
+        offenderWindow.recordEvent(clientIp, "evt-57", NOW.minus(Duration.ofMinutes(7)));
+        offenderWindow.recordEvent(clientIp, "evt-58", NOW.minus(Duration.ofMinutes(5)));
+        offenderWindow.recordEvent(clientIp, "evt-59", NOW.minus(Duration.ofMinutes(3)));
+        offenderWindow.recordEvent(clientIp, "evt-60", NOW.minus(Duration.ofMinutes(1)));
         assertThat(offenderWindow.countRecentEventsFromClient(clientIp, TEN_MINUTES, NOW)).isEqualTo(5);
 
-        offenderWindow.recordEvent(clientIp, NOW);
+        offenderWindow.recordEvent(clientIp, "evt-63", NOW);
+        assertThat(offenderWindow.countRecentEventsFromClient(clientIp, TEN_MINUTES, NOW)).isEqualTo(6);
+    }
+
+    @Test
+    void countsDistinctEventsAtTheSameMillisecond() {
+        String clientIp = "10.0.0.3";
+        for (int i = 1; i <= 6; i++) {
+            offenderWindow.recordEvent(clientIp, "evt-" + i, NOW);
+        }
+        offenderWindow.recordEvent(clientIp, "evt-6", NOW);
         assertThat(offenderWindow.countRecentEventsFromClient(clientIp, TEN_MINUTES, NOW)).isEqualTo(6);
     }
 
     @Test
     void includesEntryAtBoundaryAndExcludesEntryJustOutsideWindow() {
         String clientIp = "10.0.0.2";
-        offenderWindow.recordEvent(clientIp, NOW.minus(TEN_MINUTES));
-        offenderWindow.recordEvent(clientIp, NOW.minus(TEN_MINUTES).minusMillis(1));
+        offenderWindow.recordEvent(clientIp, "evt-70", NOW.minus(TEN_MINUTES));
+        offenderWindow.recordEvent(clientIp, "evt-71", NOW.minus(TEN_MINUTES).minusMillis(1));
         assertThat(offenderWindow.countRecentEventsFromClient(clientIp, TEN_MINUTES, NOW)).isEqualTo(1);
     }
 

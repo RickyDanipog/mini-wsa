@@ -4,7 +4,7 @@ import java.time.Duration;
 import java.time.Instant;
 
 public interface OffenderWindow {
-    void recordEvent(String clientIp, Instant receivedAt);
+    void recordEvent(String clientIp, String eventId, Instant receivedAt);
 
     long countRecentEventsFromClient(String clientIp, Duration window, Instant asOf);
 }

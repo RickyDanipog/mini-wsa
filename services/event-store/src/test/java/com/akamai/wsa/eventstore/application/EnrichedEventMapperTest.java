@@ -17,6 +17,22 @@ import static org.assertj.core.api.Assertions.assertThat;
 class EnrichedEventMapperTest {
 
     @Test
+    void mapsEventWithoutOptionalGeoLocation() {
+        Instant timestamp = Instant.parse("2026-05-20T14:32:10Z");
+        RawEventMessage rawEvent = new RawEventMessage(
+                "evt-no-geo", timestamp, 14227, "pol_web1",
+                "203.0.113.42", "www.example.com", "/search", "GET", 200, "Mozilla/5.0",
+                new RuleMessage("qa", "BOT", "Bot activity detected", Severity.LOW, AttackCategory.BOT),
+                Action.MONITOR, null, 1024, 256);
+
+        StoredEvent stored = EnrichedEventMapper.toStoredEvent(
+                new EnrichedEventMessage(rawEvent, "Bot Activity", 10, timestamp));
+
+        assertThat(stored.eventId()).isEqualTo("evt-no-geo");
+        assertThat(stored.geoLocation()).isNull();
+    }
+
+    @Test
     void mapsEveryFieldFromNestedContract() {
         RawEventMessage rawEvent = new RawEventMessage(
                 "evt-00132", Instant.parse("2026-05-20T14:32:10Z"), 14227, "pol_web1",

@@ -1,11 +1,6 @@
----
-name: prepare
-description: Detect and install the local prerequisites to build, run, and test Mini WSA on macOS — Docker (to run the cluster) plus JDK 21 + Maven (to run the event-generator on the host and run the test suite). Use before the first run, or when the deploy skill reports a missing prerequisite.
----
+# Prepare a macOS development machine
 
-# /prepare — install local prerequisites (macOS)
-
-Makes a fresh macOS machine able to run Mini WSA. The cluster runs entirely in Docker (images build in a multi-stage Maven container), so **Docker is the only hard requirement to run it**. JDK 21 + Maven are needed to run the event-generator on the host (`/generate`) and to run `mvn verify`.
+Makes a fresh macOS machine able to run Mini WSA. The cluster runs entirely in Docker (images build in a multi-stage Maven container), so **Docker is the only hard requirement to run it**. JDK 21 + Maven are needed to run the event-generator on the host ([Generate events and attack waves](generate.md)) and to run `mvn verify`.
 
 ## Detect first (never reinstall what's present)
 1. **OS:** `uname -s` must be `Darwin`. If not macOS, print the manual install list — Docker, JDK 21, Maven — and stop.
@@ -30,5 +25,5 @@ Makes a fresh macOS machine able to run Mini WSA. The cluster runs entirely in D
 - `mvn -v` shows Maven running on Java 21
 
 ## Notes
-- Only **Docker** is required to run the cluster (`/deploy`). JDK 21 + Maven are for the host-run generator and the tests.
-- Never run `sudo` non-interactively. If a step needs it (Homebrew install, Docker Desktop first launch), ask the user to run it in their terminal with `! <command>`.
+- Only **Docker** is required to run the cluster ([Start the stack and check its health](deploy.md)). JDK 21 + Maven are for the host-run generator and the tests.
+- Never run `sudo` non-interactively. If a step needs it (Homebrew install, Docker Desktop first launch), ask the user to run it in their terminal directly.

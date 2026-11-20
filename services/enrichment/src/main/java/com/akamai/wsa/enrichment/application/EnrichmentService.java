@@ -10,7 +10,6 @@ import com.akamai.wsa.enrichment.domain.service.ThreatScoreCalculator;
 import com.akamai.wsa.enrichment.ruleengine.Facts;
 import org.springframework.stereotype.Service;
 
-import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
@@ -20,20 +19,17 @@ public class EnrichmentService {
 
     static final Duration REPEAT_OFFENDER_WINDOW = Duration.ofMinutes(10);
 
-    private final Clock clock;
     private final ProcessedEventLog processedEventLog;
     private final OffenderWindow offenderWindow;
     private final AttackTypeClassifier attackTypeClassifier;
     private final ThreatScoreCalculator threatScoreCalculator;
     private final FactsFactory factsFactory;
 
-    public EnrichmentService(Clock clock,
-                       ProcessedEventLog processedEventLog,
+    public EnrichmentService(ProcessedEventLog processedEventLog,
                        OffenderWindow offenderWindow,
                        AttackTypeClassifier attackTypeClassifier,
                        ThreatScoreCalculator threatScoreCalculator,
                        FactsFactory factsFactory) {
-        this.clock = clock;
         this.processedEventLog = processedEventLog;
         this.offenderWindow = offenderWindow;
         this.attackTypeClassifier = attackTypeClassifier;
@@ -41,14 +37,13 @@ public class EnrichmentService {
         this.factsFactory = factsFactory;
     }
 
-    public Optional<EnrichedEventMessage> enrich(RawEventMessage rawEvent) {
+    public Optional<EnrichedEventMessage> enrich(RawEventMessage rawEvent, Instant receivedAt) {
         boolean isFirstSighting = processedEventLog.markProcessed(rawEvent.eventId());
         if (!isFirstSighting) {
             return Optional.empty();
         }
 
-        Instant receivedAt = clock.instant();
-        offenderWindow.recordEvent(rawEvent.clientIp(), receivedAt);
+        offenderWindow.recordEvent(rawEvent.clientIp(), rawEvent.eventId(), receivedAt);
         long offenderEventCount = offenderWindow.countRecentEventsFromClient(
                 rawEvent.clientIp(), REPEAT_OFFENDER_WINDOW, receivedAt);
 

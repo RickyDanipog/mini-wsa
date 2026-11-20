@@ -75,25 +75,24 @@ external deps needed):
 mvn -pl services/gateway spring-boot:run
 ```
 
-## Claude Code skills
+## Review the project with Codex
 
-If you open this repo in [Claude Code](https://claude.com/claude-code), it ships
-a set of skills (under [`.claude/skills/`](.claude/skills)) so you can drive the
-whole project by name instead of remembering commands:
+Open the repository root in Codex. The repository skills live in
+[`.agents/skills/`](.agents/skills). Use `$` to select a skill by name. Start
+with `$wsa-deploy`, then run `$wsa-walkthrough` against the local stack.
 
-| Skill | What it does |
-|-------|--------------|
-| `/prepare` | Detect & install prerequisites (Docker, JDK 21, Maven) — macOS. |
-| `/deploy` | Bring up the full stack **+ the Simulation Console**, wait for health, smoke-test. |
-| `/walkthrough` | Exercise every required part + bonus end-to-end and print a pass/fail checklist. |
-| `/generate` | Seed the running pipeline with realistic events and attack waves. |
-| `/add-rule` | Add a scoring rule, then ingest a matching event and show the threat score rise — live, no restart. |
-| `/reset` | Wipe all data volumes and bring the stack back up clean (optionally reseed). |
-| `/profile-storage` | Benchmark the storage candidates and find the scaling knee. |
+| Codex skill | Workflow guide |
+|-------------|----------------|
+| `$wsa-prepare` | [Check development prerequisites](docs/workflows/prepare.md) |
+| `$wsa-deploy` | [Start the stack and check its health](docs/workflows/deploy.md) |
+| `$wsa-walkthrough` | [Verify the pipeline end to end](docs/workflows/walkthrough.md) |
+| `$wsa-generate` | [Generate events and attack waves](docs/workflows/generate.md) |
+| `$wsa-add-rule` | [Add a scoring rule and check its effect](docs/workflows/add-rule.md) |
+| `$wsa-reset` | [Reset the local data volumes](docs/workflows/reset.md) |
+| `$wsa-profile-storage` | [Benchmark storage and consumer scaling](docs/workflows/profile-storage.md) |
 
-Typical first run: `/prepare` → `/deploy` → open `localhost:8090` (or `/walkthrough`
-to verify headlessly). These are plain Markdown — nothing to install, and they're
-ignored entirely if you don't use Claude Code.
+The guides also contain the terminal commands. For code changes, see
+[AGENTS.md](AGENTS.md) and the affected service’s ABOUT.md and README.md.
 
 ## API reference
 
@@ -132,7 +131,7 @@ curl -s "localhost:8084/v1/events/samples?category=INJECTION&action=DENY&limit=5
 Accepts **a single event object or an array** (batch). Validation is
 **all-or-nothing**: if any event in the batch is invalid the whole request is
 rejected. Every accepted event is stamped with a server-side `receivedAt`
-downstream. An optional `x-correlation-id` header is propagated through the
+at the gateway. An optional `x-correlation-id` header is propagated through the
 pipeline (one is generated if absent).
 
 ```bash
@@ -418,23 +417,6 @@ examples in the owning service's README):
   "N events of category X within Y minutes" → firing alerts. → [`services/analytics`](services/analytics)
 - **B4 — Rate limiting.** `429` on `/v1/stats` + `/v1/events` when a client IP
   exceeds the configured rate (`wsa.rate-limit`). → [`services/analytics`](services/analytics)
-
-## What I'd improve with more time
-
-- **Dead-letter handling.** A poison message on `events.raw`/`events.enriched`
-  currently retries against the same consumer indefinitely. The next increment
-  is a dead-letter topic with bounded retries and a small requeue/inspect path,
-  so one malformed event can't stall a partition.
-- **Idempotency at the edge.** De-duplication today relies on the event-store's
-  write being keyed by `eventId` (first-write-wins). A duplicate detected
-  at ingest — or an explicit idempotency key — would save the wasted enrichment
-  and Kafka round-trip.
-- **Schema Registry + Avro.** Messages are JSON for now. Moving the contracts to
-  Avro with a Schema Registry would make the cross-service compatibility rules
-  enforceable at build time instead of by convention.
-- **Richer observability.** Structured logs carry the correlation id; the
-  natural next step is tracing spans across the Kafka hops and per-stage metrics
-  (ingest rate, enrichment latency, consumer lag).
 
 ## What was challenging
 

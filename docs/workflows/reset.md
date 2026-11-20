@@ -1,9 +1,4 @@
----
-name: reset
-description: Reset the Mini WSA environment to a clean slate — tear the stack down and wipe all data volumes (Postgres, Redis, Kafka), bring it back up, and optionally reseed with fresh events. Use when the user wants a clean database, to clear accumulated/test data, to recover from a bad state, or to start the demo fresh.
----
-
-# /reset — clean-slate the environment
+# Reset the local data volumes
 
 Tears everything down **including data volumes** (so Postgres events, seeded rules, Redis offender windows, and Kafka offsets are all wiped), then brings the stack back up clean.
 
@@ -15,8 +10,8 @@ This deletes **all ingested events and any custom scoring rules** added at runti
    ```
    docker compose down -v
    ```
-2. **Bring it back up.** Invoke the **`deploy`** skill (it rebuilds if needed, waits for health on `:8081-:8084` and the console on `:8090`, and smoke-tests). Do not hand-roll `compose up` — reuse `deploy` so health/console checks stay in one place.
-3. **Reseed (optional, ask unless the user already said so).** Drive the **`generate`** skill for a starting dataset, e.g. `--wsa.generator.total-events=200 --wsa.generator.wave-count=5` (mode `HTTP` against the running gateway). Skip if host JDK 21 + Maven are absent (note it — the user can seed from the console's "Run attack wave" button instead).
+2. **Bring it back up.** Follow [Start the stack and check its health](deploy.md) (it rebuilds if needed, waits for health on `:8081-:8084` and the console on `:8090`, and smoke-tests). Do not hand-roll `compose up` — reuse `deploy` so health/console checks stay in one place.
+3. **Reseed (optional, ask unless the user already said so).** Follow [Generate events and attack waves](generate.md) for a starting dataset, e.g. `--wsa.generator.total-events=200 --wsa.generator.wave-count=5` (mode `HTTP` against the running gateway). Skip if host JDK 21 + Maven are absent (note it — the user can seed from the console's "Run attack wave" button instead).
 4. **Report** the clean state: services up, data volume fresh, whether it was reseeded, and the console URL `http://localhost:8090`.
 
 ## Notes

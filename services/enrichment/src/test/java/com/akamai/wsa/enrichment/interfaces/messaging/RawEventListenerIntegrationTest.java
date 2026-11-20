@@ -72,7 +72,7 @@ class RawEventListenerIntegrationTest {
             assertThat(enrichedEnvelope.correlationId()).isEqualTo("corr-2");
             assertThat(enrichedEnvelope.payload().attackType()).isEqualTo("SQL/Command Injection");
             assertThat(enrichedEnvelope.payload().rawEvent().eventId()).isEqualTo("evt-00132");
-            assertThat(enrichedEnvelope.payload().receivedAt()).isNotNull();
+            assertThat(enrichedEnvelope.payload().receivedAt()).isEqualTo(rawEnvelope.occurredAt());
         }
     }
 

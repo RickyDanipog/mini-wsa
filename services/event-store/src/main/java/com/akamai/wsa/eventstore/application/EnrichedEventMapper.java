@@ -1,6 +1,7 @@
 package com.akamai.wsa.eventstore.application;
 
 import com.akamai.wsa.contracts.EnrichedEventMessage;
+import com.akamai.wsa.contracts.GeoLocationMessage;
 import com.akamai.wsa.contracts.RawEventMessage;
 import com.akamai.wsa.eventstore.domain.model.StoredEvent;
 import com.akamai.wsa.eventstore.domain.model.StoredGeoLocation;
@@ -13,6 +14,7 @@ public final class EnrichedEventMapper {
 
     public static StoredEvent toStoredEvent(EnrichedEventMessage enrichedEventMessage) {
         RawEventMessage rawEvent = enrichedEventMessage.rawEvent();
+        GeoLocationMessage geoLocation = rawEvent.geoLocation();
         return new StoredEvent(
                 rawEvent.eventId(),
                 rawEvent.timestamp(),
@@ -31,9 +33,7 @@ public final class EnrichedEventMapper {
                         rawEvent.rule().severity(),
                         rawEvent.rule().category()),
                 rawEvent.action(),
-                new StoredGeoLocation(
-                        rawEvent.geoLocation().country(),
-                        rawEvent.geoLocation().city()),
+                geoLocation == null ? null : new StoredGeoLocation(geoLocation.country(), geoLocation.city()),
                 rawEvent.requestSize(),
                 rawEvent.responseSize(),
                 enrichedEventMessage.attackType(),

@@ -45,8 +45,7 @@ an `IngestEventRequest` DTO.
   `RawEventMessage`, wrapped via `MessageEnvelope.of(correlationId, occurredAt,
   payload)`, and published to `events.raw` keyed by `clientIp`.
 - `occurredAt` is stamped from an injected `Clock` and records gateway
-  accept-time. The gateway does **not** stamp `receivedAt` — enrichment does that
-  downstream.
+  acceptance time. Enrichment preserves this value as `receivedAt`.
 
 ## Key files
 
