@@ -96,8 +96,7 @@ from the same IP within ten minutes. The result is capped at 100.
 PostgreSQL gives the write path one transaction and lets analytics filter,
 aggregate, and paginate in SQL. Indexed columns support the time and config
 queries and the per-IP offender lookup. JSONB holds the enriched payload
-returned by samples. The older distributed implementation uses Kafka and Redis and is preserved on
-the `microservices` branch.
+returned by samples.
 
 ### What was challenging
 
@@ -115,7 +114,12 @@ write path or move the offender window out of PostgreSQL.
 
 ## Codex
 
-Open the repository root and select `$wsa-deploy`, followed by
-`$wsa-walkthrough`. The terminal commands are in
-[the deploy guide](docs/workflows/deploy.md) and
-[the walkthrough](docs/workflows/walkthrough.md).
+Open the repository root and run `$wsa-deploy`, then `$wsa-walkthrough`.
+The same commands are available in the workflow guides.
+
+| Skill | Guide |
+| --- | --- |
+| `$wsa-prepare` | [Check prerequisites](docs/workflows/prepare.md) |
+| `$wsa-deploy` | [Start Mini WSA](docs/workflows/deploy.md) |
+| `$wsa-generate` | [Generate sample events](docs/workflows/generate.md) |
+| `$wsa-walkthrough` | [Verify the assignment end to end](docs/workflows/walkthrough.md) |

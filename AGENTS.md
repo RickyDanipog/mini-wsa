@@ -1,8 +1,7 @@
 # Mini WSA Engineering Guidelines
 
 Mini WSA is an Akamai backend take-home. The required HTTP contracts and scoring
-matrix are described in [README.md](README.md). The previous distributed
-implementation is preserved on the `microservices` branch.
+matrix are described in [README.md](README.md).
 
 - Keep one Java 21 / Spring Boot application and one PostgreSQL database.
 - Validate the full input batch before starting the write transaction.
