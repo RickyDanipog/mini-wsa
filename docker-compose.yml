@@ -108,3 +108,21 @@ services:
       - ./demo/nginx.conf:/etc/nginx/conf.d/default.conf:ro
     ports:
       - "8090:80"
+
+  adminer:
+    image: adminer:4
+    container_name: wsa-adminer
+    profiles: [tools]
+    depends_on: [postgres]
+    environment:
+      ADMINER_DEFAULT_SERVER: postgres
+    ports:
+      - "8091:8080"
+
+  redisinsight:
+    image: redis/redisinsight:latest
+    container_name: wsa-redisinsight
+    profiles: [tools]
+    depends_on: [redis]
+    ports:
+      - "8092:5540"
