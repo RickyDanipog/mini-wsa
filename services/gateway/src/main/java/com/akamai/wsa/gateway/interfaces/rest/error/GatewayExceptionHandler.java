@@ -22,9 +22,18 @@ public class GatewayExceptionHandler {
                 new ApiErrorBody.ApiError("VALIDATION_FAILED", "one or more events are invalid", details)));
     }
 
-    @ExceptionHandler({MalformedRequestException.class, HttpMessageNotReadableException.class})
-    public ResponseEntity<ApiErrorBody> onMalformed(Exception malformedException) {
+    @ExceptionHandler(MalformedRequestException.class)
+    public ResponseEntity<ApiErrorBody> onInvalidField(MalformedRequestException exception) {
+        return malformed(new ApiErrorBody.ApiError.FieldViolation(exception.field(), exception.getMessage()));
+    }
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ApiErrorBody> onMalformed() {
+        return malformed(new ApiErrorBody.ApiError.FieldViolation("body", "Expected a JSON request body"));
+    }
+
+    private ResponseEntity<ApiErrorBody> malformed(ApiErrorBody.ApiError.FieldViolation detail) {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(new ApiErrorBody(
-                new ApiErrorBody.ApiError("MALFORMED_REQUEST", "request body could not be parsed", List.of())));
+                new ApiErrorBody.ApiError("MALFORMED_REQUEST", "request body could not be parsed", List.of(detail))));
     }
 }

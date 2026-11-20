@@ -63,11 +63,43 @@ class IngestControllerTest {
     }
 
     @Test
+    void rejectsNullRequestBodyWithoutPublishing() throws Exception {
+        mockMvc.perform(post("/v1/events/ingest").contentType(MediaType.APPLICATION_JSON).content("null"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("MALFORMED_REQUEST"))
+                .andExpect(jsonPath("$.error.details[0].field").value("body"));
+        verify(rawEventPublisher, never()).publish(any());
+    }
+
+    @Test
+    void rejectsNullBatchItemWithItsIndexWithoutPublishing() throws Exception {
+        mockMvc.perform(post("/v1/events/ingest").contentType(MediaType.APPLICATION_JSON)
+                        .content("[" + VALID_EVENT + ",null]"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("MALFORMED_REQUEST"))
+                .andExpect(jsonPath("$.error.details[0].field").value("[1]"));
+        verify(rawEventPublisher, never()).publish(any());
+    }
+
+    @Test
     void rejectsInvalidEnum() throws Exception {
         String badAction = VALID_EVENT.replace("\"action\":\"DENY\"", "\"action\":\"NOPE\"");
         mockMvc.perform(post("/v1/events/ingest").contentType(MediaType.APPLICATION_JSON).content(badAction))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.error.code").value("MALFORMED_REQUEST"));
+                .andExpect(jsonPath("$.error.code").value("MALFORMED_REQUEST"))
+                .andExpect(jsonPath("$.error.details[0].field").value("action"))
+                .andExpect(jsonPath("$.error.details[0].message", org.hamcrest.Matchers.containsString("DENY")));
+        verify(rawEventPublisher, never()).publish(any());
+    }
+
+    @Test
+    void reportsInvalidTimestampAtItsBatchIndex() throws Exception {
+        String badTime = VALID_EVENT.replace("2026-05-20T14:32:10Z", "yesterday");
+        mockMvc.perform(post("/v1/events/ingest").contentType(MediaType.APPLICATION_JSON)
+                        .content("[" + VALID_EVENT + "," + badTime + "]"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.details[0].field").value("[1].timestamp"))
+                .andExpect(jsonPath("$.error.details[0].message").value("Expected an ISO-8601 timestamp"));
         verify(rawEventPublisher, never()).publish(any());
     }
 
