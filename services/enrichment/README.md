@@ -89,7 +89,7 @@ from Postgres. Postgres JDBC auto-configuration is gated by an
 | `RATE_LIMIT` | Rate Limiting |
 
 The repeat-offender bonus is the one **stateful** rule. Each event is recorded
-then counted within the window at processing time (record-then-read: the 6th
+then counted within the window ending at gateway ingestion time (record-then-read: the 6th
 event from an IP is the first to be flagged, since the threshold is `> 5`).
 That window lives behind the `OffenderWindow` port — in-memory for dry runs, a
 Redis per-IP sorted set under load.

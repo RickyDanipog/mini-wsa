@@ -133,9 +133,9 @@ generator/client ─POST /v1/events/ingest─▶ gateway
    gateway: bean-validate · mint correlationId · map DTO→RawEventMessage · publish events.raw · return 201/400
       └▶ enrichment consumes events.raw
             · classify attackType (AttackType.fromCategory)
+            · record this event into the Redis window
             · repeatOffender = redisOffenderWindow.countRecent(clientIp, 10m, receivedAt) > 5
             · threatScore = ruleBasedCalculator.calculate(inputs)   [pure]
-            · record this event into the Redis window
             · publish EnrichedEventMessage → events.enriched
                └▶ event-store consumes events.enriched · persist to PostgreSQL primary
 ```
@@ -174,8 +174,8 @@ logic exhaustively unit-testable.
 ### 6.2 Repeat-offender window (Redis, owned by enrichment)
 Because enrichment no longer stores events itself (event-store does), the
 `OffenderWindow` port owns its own window state with two methods:
-`recordEvent(clientIp, receivedAt)` and `countRecentEventsFromClient(clientIp,
-window, asOf)`. Implementation = **Redis sorted set per IP** (`ZADD receivedAt`,
+`recordEvent(clientIp, eventId, receivedAt)` and `countRecentEventsFromClient(clientIp,
+window, asOf)`. Implementation = **Redis sorted set per IP** (`ZADD key receivedAtMillis eventId`,
 `ZREMRANGEBYSCORE` old, `ZCOUNT [asOf-10m, asOf]`, TTL). In-memory adapter for
 tests; Redis for real. Self-contained in enrichment — no synchronous call back
 to event-store.
@@ -234,7 +234,7 @@ that hurts) most decisively — so it ships and Mongo was retired to a branch.
 - **gateway (write):** `POST /v1/events/ingest` — single or array; bean-validated
   (required fields, enum binding, ISO-8601); **all-or-nothing** → `201
   {acceptedCount}` or `400 {error:{code,message,details[]}}`; mints correlationId
-  (`receivedAt` is stamped in enrichment on processing). The same ingestion core
+  (enrichment uses gateway acceptance time as `receivedAt`). The same ingestion core
   also consumes the Kafka topic `events.ingest` (bonus B2) — a second inbound
   adapter over `EventIngestionService`; invalid messages are logged and skipped.
 - **enrichment (rules):** `GET/POST/PUT/DELETE /v1/rules` (+ `GET
@@ -282,15 +282,11 @@ that hurts) most decisively — so it ships and Mongo was retired to a branch.
 
 ### 10.1 Measured scaling (single host)
 
-The scaling sweep varied Kafka partitions against enrichment + event-store
-consumer replicas (`storage-benchmark.md`). The pipeline **does** scale with
-partitions + matching consumer replicas, up to a measured **knee of ~2200 ev/s
-at 4 replicas / 4 partitions**. Past that point growth is **sub-linear (1.7×,
-not 4×)** because a single host is CPU-bound once ~4 replicas are busy.
-Partitions without matching consumers give no gain; replicas beyond the
-partition count sit idle. These absolute numbers are single-host — the
-**transferable result is the shape**: throughput tracks `min(partitions,
-consumers)` until the underlying host saturates.
+The single-host sweep measured 1,302 events/s with one partition and one
+consumer per service, and 2,211 events/s with four of each. Increasing to
+eight partitions at the same four replicas produced 2,212 events/s. Each
+consumer can serve multiple partitions. Host contention is one possible
+explanation for the plateau. See `storage-benchmark.md` for the measurements.
 
 To go **10×**, spread the same consumer groups across more hosts and add
 partitions in lockstep; the read side scales independently off the read replica.

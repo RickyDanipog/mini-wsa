@@ -36,7 +36,7 @@ public class RawEventListener {
                 });
         RawEventMessage rawEvent = incoming.payload();
 
-        enrichmentService.enrich(rawEvent).ifPresentOrElse(
+        enrichmentService.enrich(rawEvent, incoming.occurredAt()).ifPresentOrElse(
                 enriched -> {
                     logger.info("RawEventListener - enriched eventId={} attackType={} threatScore={} correlationId={}",
                             rawEvent.eventId(), enriched.attackType(), enriched.threatScore(), incoming.correlationId());

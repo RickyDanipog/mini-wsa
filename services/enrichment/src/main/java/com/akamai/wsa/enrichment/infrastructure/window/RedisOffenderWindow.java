@@ -23,10 +23,10 @@ public class RedisOffenderWindow implements OffenderWindow {
     }
 
     @Override
-    public void recordEvent(String clientIp, Instant receivedAt) {
+    public void recordEvent(String clientIp, String eventId, Instant receivedAt) {
         String clientKey = keyForClient(clientIp);
         long epochMillis = receivedAt.toEpochMilli();
-        stringRedisTemplate.opsForZSet().add(clientKey, Long.toString(epochMillis), epochMillis);
+        stringRedisTemplate.opsForZSet().add(clientKey, eventId, epochMillis);
         stringRedisTemplate.expire(clientKey, WINDOW_LENGTH.plus(TTL_MARGIN));
     }
 

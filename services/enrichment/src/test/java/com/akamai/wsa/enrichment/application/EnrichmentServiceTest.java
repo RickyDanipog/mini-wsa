@@ -23,10 +23,8 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
-import java.time.ZoneOffset;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -35,7 +33,6 @@ class EnrichmentServiceTest {
 
     private static final Instant FIXED_NOW = Instant.parse("2026-05-20T14:32:11Z");
 
-    private final Clock fixedClock = Clock.fixed(FIXED_NOW, ZoneOffset.UTC);
     private final ScoringRuleRepository scoringRuleRepository = new InMemoryScoringRuleRepository();
     private final ThreatScoreCalculator calculator = new RuleEngineThreatScoreCalculator(scoringRuleRepository);
     private final FactsFactory factsFactory = new JacksonFactsFactory(
@@ -50,7 +47,7 @@ class EnrichmentServiceTest {
         offenderWindow = new InMemoryOffenderWindow();
         processedEventLog = new InMemoryProcessedEventLog();
         service = new EnrichmentService(
-                fixedClock, processedEventLog, offenderWindow, new DefaultAttackTypeClassifier(), calculator,
+                processedEventLog, offenderWindow, new DefaultAttackTypeClassifier(), calculator,
                 factsFactory);
     }
 
@@ -65,7 +62,7 @@ class EnrichmentServiceTest {
 
     @Test
     void enrichesSingleEventWithClassificationScoreAndReceivedAt() {
-        Optional<EnrichedEventMessage> enriched = service.enrich(rawEvent("evt-1"));
+        Optional<EnrichedEventMessage> enriched = service.enrich(rawEvent("evt-1"), FIXED_NOW);
 
         assertThat(enriched).isPresent();
         assertThat(enriched.get().attackType()).isEqualTo("SQL/Command Injection");
@@ -77,16 +74,16 @@ class EnrichmentServiceTest {
     @Test
     void sixthEventFromSameClientBecomesRepeatOffender() {
         for (int i = 1; i <= 5; i++) {
-            assertThat(service.enrich(rawEvent("evt-" + i)).get().threatScore()).isEqualTo(75);
+            assertThat(service.enrich(rawEvent("evt-" + i), FIXED_NOW).get().threatScore()).isEqualTo(75);
         }
-        assertThat(service.enrich(rawEvent("evt-6")).get().threatScore()).isEqualTo(90);
+        assertThat(service.enrich(rawEvent("evt-6"), FIXED_NOW).get().threatScore()).isEqualTo(90);
     }
 
     @Test
     void duplicateEventIdIsSkippedAndDoesNotInflateOffenderWindow() {
-        assertThat(service.enrich(rawEvent("evt-dup"))).isPresent();
+        assertThat(service.enrich(rawEvent("evt-dup"), FIXED_NOW)).isPresent();
 
-        Optional<EnrichedEventMessage> redelivery = service.enrich(rawEvent("evt-dup"));
+        Optional<EnrichedEventMessage> redelivery = service.enrich(rawEvent("evt-dup"), FIXED_NOW);
 
         assertThat(redelivery).isEmpty();
         assertThat(offenderWindow.countRecentEventsFromClient(

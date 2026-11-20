@@ -49,21 +49,18 @@ Kafka partitions × (enrichment + event-store) replicas. Analytics stays single-
 | 1 | 1 | 1,302 ev/s | 76.8 s | 431 ms | baseline (Part A median) |
 | 4 | 1 | 1,344 ev/s | 74.4 s | 412 ms | +partitions, **1** consumer → no gain |
 | 4 | 4 | **2,211 ev/s** | 45.2 s | 410 ms | replicas matched to partitions → **1.7×** |
-| 8 | 4 | 2,212 ev/s | 45.2 s | 398 ms | extra partitions idle (replicas cap at 4) |
+| 8 | 4 | 2,212 ev/s | 45.2 s | 398 ms | throughput flat at four replicas |
 
 **The knee:** write throughput plateaus at **~2,200 ev/s at 4 replicas / 4
 partitions** on Postgres. The two controls behave exactly as the model predicts:
 
 - **Partitions without consumers do nothing** (`p4/r1` ≈ `p1/r1`) — a consumer group parallelizes only up to the number of consumers.
 - **Replicas matched to partitions give the gain** (`p4/r4` = 1.7× baseline).
-- **Partitions beyond replicas are idle** (`p8/r4` = `p4/r4`) — 4 consumers cover only 4 of 8 partitions.
+- **At four replicas, doubling partitions produced no measured throughput gain.** Four consumers can serve all eight partitions, with two assigned to each.
 
-The 1→4 scaling is **sub-linear (1.7×, not 4×)**, and the `r4` cells show the feed
-phase itself slowing (10.5 s → 17.7 s) from CPU contention. On a single host,
-**the bottleneck past ~4 replicas is host CPU**, not partitions or the store —
-running 4 enrichment + 4 event-store JVMs saturates the machine. Real scale-out
-numbers need multiple hosts; the *shape* (linear-ish until CPU-bound, then flat)
-is the transferable result.
+Increasing replicas from one to four raised throughput 1.7× while the feed
+phase slowed from 10.5 s to 17.7 s. Host CPU contention could explain the
+plateau. The single-host sweep did not isolate its cause.
 
 ## Recommendation
 
@@ -72,7 +69,7 @@ enrichment offender window (orthogonal — not part of this comparison). For thi
 **aggregation-heavy analytics workload** at the tested scale, a relational store
 with `(config_id, timestamp)` / `(client_ip, timestamp)` indexes beats Mongo on
 the query path by ~3× and on writes by ~18%, and it scales cleanly with Kafka
-partitions until the host CPU caps it.
+partitions over the tested range.
 
 Mongo's counter-arguments (schema flexibility, native horizontal sharding at very
 large scale) are real but don't pay off at this scale for this query shape. Next
@@ -84,5 +81,5 @@ services.
 
 - Single host, laptop-class — absolute throughput is machine-bound; trust ratios.
 - 3 runs, medians reported; run-to-run spread was tight (drain within ~6%, stats p95 within ~5%).
-- Scaling sweep is 1 run per cell (directional) and CPU-bound past ~4 replicas on one machine.
+- Scaling sweep is 1 run per cell (directional) on one host.
 - Analytics was not scaled (single reader); query latency held flat across the sweep, as expected.

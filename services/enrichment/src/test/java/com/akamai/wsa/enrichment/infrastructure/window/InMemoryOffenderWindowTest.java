@@ -18,40 +18,40 @@ class InMemoryOffenderWindowTest {
     @Test
     void countsEventsRecordedForClientWithinWindow() {
         for (int i = 0; i < 4; i++) {
-            window.recordEvent("10.0.0.1", NOW);
+            window.recordEvent("10.0.0.1", "evt-" + i, NOW);
         }
         assertThat(window.countRecentEventsFromClient("10.0.0.1", TEN_MINUTES, NOW)).isEqualTo(4);
     }
 
     @Test
     void isolatesCountsPerClient() {
-        window.recordEvent("10.0.0.1", NOW);
-        window.recordEvent("10.0.0.2", NOW);
+        window.recordEvent("10.0.0.1", "evt-27", NOW);
+        window.recordEvent("10.0.0.2", "evt-28", NOW);
         assertThat(window.countRecentEventsFromClient("10.0.0.1", TEN_MINUTES, NOW)).isEqualTo(1);
         assertThat(window.countRecentEventsFromClient("unknown", TEN_MINUTES, NOW)).isZero();
     }
 
     @Test
     void excludesEventsOlderThanWindow() {
-        window.recordEvent("10.0.0.1", NOW.minus(Duration.ofMinutes(11)));
-        window.recordEvent("10.0.0.1", NOW);
+        window.recordEvent("10.0.0.1", "evt-35", NOW.minus(Duration.ofMinutes(11)));
+        window.recordEvent("10.0.0.1", "evt-36", NOW);
         assertThat(window.countRecentEventsFromClient("10.0.0.1", TEN_MINUTES, NOW)).isEqualTo(1);
     }
 
     @Test
     void includesEventAtExactlyTenMinuteBoundary() {
-        window.recordEvent("10.0.0.1", NOW.minus(TEN_MINUTES));
+        window.recordEvent("10.0.0.1", "evt-42", NOW.minus(TEN_MINUTES));
         assertThat(window.countRecentEventsFromClient("10.0.0.1", TEN_MINUTES, NOW)).isEqualTo(1);
     }
 
     @Test
     void sixthEventInWindowIsFirstToCrossRepeatOffenderThreshold() {
         for (int i = 1; i <= 5; i++) {
-            window.recordEvent("10.0.0.1", NOW);
+            window.recordEvent("10.0.0.1", "evt-" + i, NOW);
         }
         assertThat(window.countRecentEventsFromClient("10.0.0.1", TEN_MINUTES, NOW)).isEqualTo(5);
 
-        window.recordEvent("10.0.0.1", NOW);
+        window.recordEvent("10.0.0.1", "evt-53", NOW);
         assertThat(window.countRecentEventsFromClient("10.0.0.1", TEN_MINUTES, NOW)).isEqualTo(6);
     }
 }
